@@ -256,11 +256,19 @@ async fn page(
                 .collect::<Result<_, sqlx::Error>>()
         })
         .collect::<Result<Vec<_>, _>>()?;
+    let count_sql = format!("SELECT COUNT(*) FROM {source} AS dbsaur_count");
+    let total: i64 = sqlx::query_scalar(sqlx::AssertSqlSafe(count_sql.as_str()))
+        .fetch_one(&mut *tx)
+        .await?;
     tx.rollback().await?;
     Ok(TablePage {
         columns,
         rows,
         has_more,
+
+        total_rows: Some(total.to_string()),
+
+        editing: None,
         page,
         page_size,
     })
@@ -272,7 +280,13 @@ pub(crate) async fn rows(input: &ConnectionInput, query: &BrowseQuery) -> AppRes
         return Err(invalid("Choose a table in the active database."));
     }
     let mut connection = connect(input).await?;
-    let columns = metadata(&mut connection, &query.schema, &query.table).await?;
+    let columns = metadata(
+        &mut connection,
+        &query.schema,
+        &query.table,
+        &input.provider,
+    )
+    .await?;
     let mut order = columns
         .iter()
         .filter(|c| c.primary_key)
@@ -316,9 +330,36 @@ pub(crate) async fn rows(input: &ConnectionInput, query: &BrowseQuery) -> AppRes
 }
 pub(crate) async fn query(input: &ConnectionInput, query: &SqlQuery) -> AppResult<TablePage> {
     let (number, size) = query.bounds().map_err(invalid)?;
-    let sql = super::read_query::select(&query.sql, &sqlparser::dialect::MySqlDialect {})?;
-    let source = format!("({sql})");
+    let mut sql = super::read_query::select(&query.sql, &sqlparser::dialect::MySqlDialect {})?;
     let mut connection = connect(input).await?;
+    let mut edit_plan = None;
+    if let Some(candidate) =
+        super::query_editing::candidate(&sql, &sqlparser::dialect::MySqlDialect {}, false)
+    {
+        let (schema, table) = if candidate.name.len() == 2 {
+            (candidate.name[0].clone(), candidate.name[1].clone())
+        } else {
+            (input.database.clone(), candidate.name[0].clone())
+        };
+        let target = sqlx::query("SELECT TABLE_SCHEMA,TABLE_NAME FROM information_schema.TABLES WHERE TABLE_SCHEMA=? AND TABLE_NAME=? AND TABLE_TYPE='BASE TABLE'").bind(&schema).bind(&table).fetch_optional(&mut connection).await?;
+        if let Some(target) = target {
+            let schema: String = target.try_get("TABLE_SCHEMA")?;
+            let table: String = target.try_get("TABLE_NAME")?;
+            let base = metadata(&mut connection, &schema, &table, &input.provider).await?;
+            edit_plan = super::query_editing::prepare(
+                candidate,
+                schema,
+                table,
+                base,
+                &sqlparser::dialect::MySqlDialect {},
+                &input.provider,
+            );
+        }
+    }
+    if let Some(plan) = &edit_plan {
+        sql = plan.sql.clone();
+    }
+    let source = format!("({sql})");
     let describe = format!("SELECT * FROM {source} AS source");
     let statement = connection
         .prepare(sqlx::AssertSqlSafe(describe.as_str()).into_sql_str())
@@ -336,12 +377,17 @@ pub(crate) async fn query(input: &ConnectionInput, query: &SqlQuery) -> AppResul
             primary_key: false,
             read_only: true,
             default_value: None,
+            definition: None,
         });
     }
     if columns.is_empty() {
         return Err(invalid("Run a SELECT query that returns columns."));
     }
-    page(&mut connection, &source, columns, "", number, size).await
+    let mut result = page(&mut connection, &source, columns, "", number, size).await?;
+    if let Some(plan) = edit_plan {
+        super::query_editing::finish(&mut result, plan)?;
+    }
+    Ok(result)
 }
 #[async_trait]
 impl DatabaseAdapter for MySqlAdapter {
@@ -386,8 +432,9 @@ async fn metadata(
     connection: &mut MySqlConnection,
     schema: &str,
     table: &str,
+    provider: &str,
 ) -> AppResult<Vec<Column>> {
-    let metadata = sqlx::query("SELECT COLUMN_NAME, COLUMN_TYPE, IS_NULLABLE, COLUMN_DEFAULT, COLUMN_KEY, EXTRA FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=? AND TABLE_NAME=? ORDER BY ORDINAL_POSITION").bind(schema).bind(table).fetch_all(connection).await?;
+    let metadata = sqlx::query("SELECT COLUMN_NAME, COLUMN_TYPE, IS_NULLABLE, COLUMN_DEFAULT, COLUMN_KEY, EXTRA, CHARACTER_SET_NAME, COLLATION_NAME, COLUMN_COMMENT FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=? AND TABLE_NAME=? ORDER BY ORDINAL_POSITION").bind(schema).bind(table).fetch_all(connection).await?;
     if metadata.is_empty() {
         return Err(AppError(
             ErrorKind::NotFound,
@@ -426,6 +473,30 @@ async fn metadata(
                             )
                         }),
                 default_value: row.try_get("COLUMN_DEFAULT")?,
+                definition: Some(ColumnDefinition {
+                    data_type: row.try_get("COLUMN_TYPE")?,
+                    nullable: row.try_get::<String, _>("IS_NULLABLE")? == "YES",
+                    default_expression: row.try_get::<Option<String>, _>("COLUMN_DEFAULT")?.map(
+                        |value| {
+                            if provider == "mariadb"
+                                || row
+                                    .try_get::<String, _>("EXTRA")
+                                    .unwrap_or_default()
+                                    .contains("DEFAULT_GENERATED")
+                                || value.to_ascii_lowercase().starts_with("current_timestamp")
+                            {
+                                value
+                            } else {
+                                super::column_change::mysql_literal(&value)
+                            }
+                        },
+                    ),
+                    character_set: row.try_get("CHARACTER_SET_NAME")?,
+                    collation: row.try_get("COLLATION_NAME")?,
+                    comment: row.try_get("COLUMN_COMMENT")?,
+                    extra: row.try_get("EXTRA")?,
+                    default_constraint: None,
+                }),
             })
         })
         .collect::<Result<Vec<_>, sqlx::Error>>()?;

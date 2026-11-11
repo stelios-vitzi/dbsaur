@@ -67,16 +67,53 @@ export interface ColumnInfo {
   primaryKey: boolean
   readOnly: boolean
   defaultValue: string | null
+  definition?: ColumnDefinition
 }
+export interface ColumnDefinition {
+  dataType: string
+  nullable: boolean
+  defaultExpression: string | null
+  characterSet: string | null
+  collation: string | null
+  comment: string
+  extra: string
+  defaultConstraint: string | null
+}
+export type ColumnChange =
+  | { kind: 'rename'; name: string }
+  | { kind: 'drop' }
+  | {
+      kind: 'definition'
+      dataType: string
+      nullable: boolean
+      defaultExpression: string | null
+      characterSet: string | null
+      collation: string | null
+    }
 export interface TablePage {
   columns: ColumnInfo[]
   rows: Record<string, unknown>[]
   hasMore: boolean
   page: number
   pageSize: number
+  totalRows?: string | null
+  editing?: {
+    schema: string
+    table: string
+    columns: Record<string, string>
+    originals: Record<string, unknown>[]
+  } | null
 }
 
 export type Mutation =
+  | {
+      action: 'alterColumn'
+      schema: string
+      table: string
+      column: string
+      expected: ColumnDefinition
+      change: ColumnChange
+    }
   | { action: 'insert'; schema: string; table: string; values: Record<string, string | null> }
   | {
       action: 'update'

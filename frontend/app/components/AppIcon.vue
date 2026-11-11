@@ -26,6 +26,8 @@ import fit from '@material-symbols/svg-400/outlined/center_focus_strong.svg?raw'
 import zoomIn from '@material-symbols/svg-400/outlined/zoom_in.svg?raw'
 import zoomOut from '@material-symbols/svg-400/outlined/zoom_out.svg?raw'
 import minus from '@material-symbols/svg-400/outlined/remove.svg?raw'
+import trash from '@material-symbols/svg-400/outlined/delete.svg?raw'
+import edit from '@material-symbols/svg-400/outlined/edit.svg?raw'
 import map from '@material-symbols/svg-400/outlined/map.svg?raw'
 
 const props = defineProps<{ name: string; size?: number }>()
@@ -56,6 +58,8 @@ const icons: Record<string, string> = {
   zoomIn,
   zoomOut,
   minus,
+  trash,
+  edit,
   map,
 }
 const paths = computed(() =>

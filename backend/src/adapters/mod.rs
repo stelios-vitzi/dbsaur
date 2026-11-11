@@ -1,7 +1,9 @@
+mod column_change;
 pub mod demo;
 pub mod mariadb;
 pub mod mysql;
 pub mod postgres;
+mod query_editing;
 mod read_query;
 mod sql;
 pub mod sqlserver;

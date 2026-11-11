@@ -11,7 +11,7 @@ interface UpdateStatus {
   message?: string
 }
 const status = ref<UpdateStatus>()
-const dismissed = ref(false)
+const desktop = window.location.origin === 'http://127.0.0.1:34618'
 const busy = ref(false)
 const error = ref('')
 const { confirm } = useToast()
@@ -23,7 +23,7 @@ async function refresh() {
     status.value = await $fetch<UpdateStatus>('/api/desktop/update')
   } catch {
     // The local desktop API may have stopped.
-    if (status.value) error.value = 'Could not reach the updater. Reopen the app to try again.'
+    error.value = 'Could not reach the updater. Reopen the app to try again.'
     return
   }
   if (!stopped && ['checking', 'downloading', 'installing'].includes(status.value.phase))
@@ -50,12 +50,11 @@ async function action(kind: 'check' | 'install') {
 }
 
 function checkAgain() {
-  dismissed.value = false
   void action('check')
 }
 
 onMounted(() => {
-  if (window.location.origin === 'http://127.0.0.1:34618') void refresh()
+  if (desktop) void refresh()
 })
 onBeforeUnmount(() => {
   stopped = true
@@ -64,12 +63,8 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <aside
-    v-if="status && status.phase !== 'unavailable'"
-    class="desktop-updater"
-    aria-label="Application updates"
-  >
-    <template v-if="!dismissed || ['downloading', 'installing'].includes(status.phase)">
+  <aside class="desktop-updater" aria-label="Application updates">
+    <template v-if="status && status.phase !== 'unavailable'">
       <span role="status" aria-live="polite">
         <template v-if="status.phase === 'available'"
           >DBsaur {{ status.version }} is available.</template
@@ -95,16 +90,15 @@ onBeforeUnmount(() => {
       >
         Install and restart
       </button>
-      <button
-        v-if="['available', 'current', 'error'].includes(status.phase)"
-        class="button secondary small"
-        @click="dismissed = true"
-      >
-        Later
-      </button>
     </template>
+    <p v-else-if="!error" role="status">
+      {{
+        status?.message ||
+        (desktop ? 'Loading update status…' : 'Updates are available in installed desktop builds.')
+      }}
+    </p>
     <button
-      v-if="['available', 'current', 'error'].includes(status.phase)"
+      v-if="status && ['idle', 'available', 'current', 'error'].includes(status.phase)"
       class="text-button"
       :disabled="busy"
       @click="checkAgain"
@@ -120,11 +114,8 @@ onBeforeUnmount(() => {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  justify-content: flex-end;
+  justify-content: flex-start;
   gap: 0.65rem;
-  padding: 0.4rem 1rem;
-  background: var(--surface);
-  border-top: 1px solid var(--border);
   font-size: 0.8rem;
 }
 </style>

@@ -5,6 +5,8 @@ import { useDatabase } from '../composables/useDatabase'
 import { useWorkspaceTabs } from '../composables/useWorkspaceTabs'
 import { useSidebarResize } from '../composables/useSidebarResize'
 import AppIcon from './AppIcon.vue'
+import AppMenuBar from './AppMenuBar.vue'
+import AboutDialog from './AboutDialog.vue'
 import CellEditor from './CellEditor.vue'
 import ConnectionForm from './ConnectionForm.vue'
 import ContextMenu from './ContextMenu.vue'
@@ -17,6 +19,7 @@ import MutationDialog from './MutationDialog.vue'
 import QueryEditor from './QueryEditor.vue'
 import SchemaDiagram from './SchemaDiagram.vue'
 import SchemaTableEditor from './SchemaTableEditor.vue'
+import TableStructureDialog from './TableStructureDialog.vue'
 
 import { providerOptions, quoteIdentifier } from '../providers'
 import type {
@@ -28,25 +31,36 @@ import type {
 } from '../../shared/database'
 const db = useDatabase()
 const workspaceTabs = useWorkspaceTabs(db)
-const { rowFilter, tab, tableTabs, activeView, activateQuery, runQuery } = workspaceTabs
-const editor = ref<'insert' | 'delete' | 'schema' | null>(null)
-const schemaAction = ref<'execute' | 'createDatabase'>('execute')
-const schemaTargetTable = ref<TableInfo | null>(null)
+const { tableTabs, activeView, activateQuery, runQuery } = workspaceTabs
+const editor = ref<'delete' | 'createDatabase' | null>(null)
+const structureTable = ref<TableInfo | null>(null)
 const diagramTableEditor = ref<TableInfo | null | undefined>()
 const diagramSuggestedUniqueColumn = ref<string>()
 const diagramMutationBusy = ref(false)
 const editingCell = ref<{
   row: Record<string, unknown>
   column: ColumnInfo
+  table: TableInfo | null
 } | null>(null)
+const mutationTable = computed<TableInfo | null>(() => {
+  if (!workspaceTabs.queryActive.value) return selectedTable.value
+  const source = data.value?.editing
+  return source
+    ? {
+        schema: source.schema,
+        name: source.table,
+        kind: 'BASE TABLE',
+        columns: Object.values(source.columns),
+      }
+    : null
+})
 const editable = computed(
   () =>
     !!session.value &&
     session.value.provider !== 'demo' &&
     !session.value.readOnly &&
     providerOptions(session.value.provider).editing &&
-    !workspaceTabs.queryActive.value &&
-    selectedTable.value?.kind === 'BASE TABLE',
+    mutationTable.value?.kind === 'BASE TABLE',
 )
 const schemaEditable = computed(
   () =>
@@ -58,11 +72,13 @@ const schemaEditable = computed(
 const recordEditable = computed(
   () =>
     editable.value &&
-    (session.value?.provider === 'postgres' ||
+    (!!data.value?.editing ||
+      session.value?.provider === 'postgres' ||
       !!data.value?.columns.some((column) => column.primaryKey)),
 )
 const toast = useToast()
 const settingsOpen = ref(false)
+const aboutOpen = ref(false)
 const schemaDiagramOpen = ref(false)
 const context = shallowRef<{
   x: number
@@ -106,18 +122,18 @@ function tableContext(event: MouseEvent, table: TableInfo) {
     {
       label: 'View structure',
       disabled,
-      run: async () => {
-        await workspaceTabs.openTable(table)
-        tab.value = 'structure'
+      run: () => {
+        structureTable.value = table
       },
     },
   ]
   if (schemaEditable.value && table.kind === 'BASE TABLE')
     actions.push({
-      label: 'Edit table details',
+      label: 'Edit table schema',
       disabled: disabled || diagramMutationBusy.value,
       run: () => openDiagramTableEditor(table),
     })
+  if (activeView.value === workspaceTabs.key(table)) actions.push(...pageContextActions())
   actions.push(
     {
       label: 'Copy table name',
@@ -136,13 +152,35 @@ function schemaContext(event: MouseEvent, schema: string) {
     { label: 'Refresh explorer', disabled: switching.value || busy.value, run: db.refreshExplorer },
   ])
 }
+function pageContextActions(): ContextAction[] {
+  const disabled = busy.value || switching.value || connecting.value
+  const actions: ContextAction[] = [
+    {
+      label: activeQuery.value ? 'Refresh query results' : 'Refresh rows',
+      disabled:
+        disabled || !(workspaceTabs.queryActive.value ? activeQuery.value : selectedTable.value),
+      run: db.loadRows,
+    },
+    { label: 'Export current page as JSON', disabled: disabled || !data.value, run: exportPage },
+  ]
+  if (activeQuery.value && selectedTable.value)
+    actions.push({ label: 'Back to table', disabled, run: workspaceTabs.backToTable })
+  return actions
+}
+function dataContext(event: MouseEvent) {
+  showContext(
+    event,
+    workspaceTabs.queryActive.value ? 'Query results' : (selectedTable.value?.name ?? 'Table'),
+    pageContextActions(),
+  )
+}
 function rowContext(event: MouseEvent, index: number, column?: string) {
   const row = data.value?.rows[index]
   if (!row) return
   selectedRow.value = index
   const actions: ContextAction[] = [
     { label: 'Copy row as JSON', run: () => copy(row) },
-    { label: 'Export current page', run: exportPage },
+    ...pageContextActions(),
   ]
   if (column)
     actions.unshift(
@@ -150,48 +188,24 @@ function rowContext(event: MouseEvent, index: number, column?: string) {
       { label: 'Copy cell value', run: () => copy(row[column]) },
     )
   if (editable.value)
-    actions.push(
-      {
-        label: 'Insert record',
-        run: () => {
-          editor.value = 'insert'
-        },
+    actions.push({
+      disabled: !recordEditable.value || busy.value || switching.value || connecting.value,
+      label: 'Delete row…',
+      run: () => {
+        editor.value = 'delete'
       },
-      {
-        disabled: !recordEditable.value,
-        label: 'Delete row…',
-        run: () => {
-          editor.value = 'delete'
-        },
-      },
-    )
+    })
   const number = page.value * pageSize.value + index + 1
   showContext(event, column ? `${column} · Row ${number}` : `Row ${number}`, actions)
 }
 async function mutationSaved() {
-  const savedAction = editor.value === 'schema' ? schemaAction.value : null
+  const createdDatabase = editor.value === 'createDatabase'
   editor.value = null
   selectedRow.value = null
   workspaceTabs.invalidate()
-  toast.show(
-    savedAction === 'createDatabase'
-      ? 'Database created successfully.'
-      : savedAction === 'execute'
-        ? 'Database change applied successfully.'
-        : 'Change applied successfully.',
-  )
+  toast.show(createdDatabase ? 'Database created successfully.' : 'Row deleted successfully.')
   explorerKey.value++
   await db.refreshExplorer()
-}
-function openSchemaEditor(
-  action: 'execute' | 'createDatabase' = 'execute',
-  options: { table?: TableInfo | null } = {},
-) {
-  schemaAction.value = action
-  schemaTargetTable.value = Object.hasOwn(options, 'table')
-    ? (options.table ?? null)
-    : selectedTable.value
-  editor.value = 'schema'
 }
 function openDiagramTableEditor(table: TableInfo | null, suggestedUniqueColumn?: string) {
   diagramSuggestedUniqueColumn.value = suggestedUniqueColumn
@@ -302,6 +316,7 @@ const queryWorkspaceKey = ref(0)
 watch(session, () => {
   settingsOpen.value = false
   schemaDiagramOpen.value = false
+  structureTable.value = null
   diagramTableEditor.value = undefined
   context.value = null
   editingCell.value = null
@@ -361,8 +376,17 @@ const initialSql = computed(() => {
     : 'SELECT 1 AS result;'
 })
 const record = computed(() =>
-  selectedRow.value === null ? null : data.value?.rows[selectedRow.value] || null,
+  selectedRow.value === null
+    ? null
+    : (data.value?.editing?.originals[selectedRow.value] ?? data.value?.rows[selectedRow.value]) ||
+      null,
 )
+const totalPages = computed(() => {
+  if (data.value?.totalRows == null) return null
+  const total = BigInt(data.value.totalRows)
+  const count = (total + BigInt(pageSize.value) - 1n) / BigInt(pageSize.value)
+  return (count || 1n).toLocaleString()
+})
 watch([data, busy, switching], () => {
   context.value = null
 })
@@ -393,14 +417,16 @@ function exportPage() {
   toast.show('JSON export downloaded.')
   setTimeout(() => URL.revokeObjectURL(url), 1000)
 }
-watch(rowFilter, () => {
-  selectedRow.value = null
-})
 function editCell(index: number, name: string) {
   selectedRow.value = index
-  const row = data.value?.rows[index]
+  const row = data.value?.editing?.originals[index] ?? data.value?.rows[index]
   const column = data.value?.columns.find((column) => column.name === name)
-  if (row && column) editingCell.value = { row, column }
+  if (row && column)
+    editingCell.value = {
+      row,
+      column: { ...column, name: data.value?.editing?.columns[name] ?? name },
+      table: mutationTable.value,
+    }
 }
 async function cellSaved() {
   editingCell.value = null
@@ -412,14 +438,50 @@ async function cellSaved() {
 <template>
   <div class="workspace" @contextmenu.prevent="workspaceContext">
     <header class="app-header">
-      <div class="header-branding">
-        <a href="/" class="brand" aria-label="DBsaur home"
-          ><span class="brand-icon"><AppIcon name="database" :size="20" /></span>DB<span
-            class="brand-db"
-            >saur</span
-          ></a
-        >
-      </div>
+      <AppMenuBar
+        :menus="[
+          {
+            label: 'File',
+            actions: [
+              { label: 'New connection…', run: () => connectionDialog?.showModal() },
+              {
+                label: 'Disconnect',
+                disabled: !session || connecting || switching,
+                run: db.disconnect,
+              },
+            ],
+          },
+          {
+            label: 'View',
+            actions: [
+              { label: 'Reset explorer width', disabled: !session, run: sidebar.reset },
+              {
+                label: 'Database diagram',
+                disabled: !session || connecting || switching || tablesLoading,
+                run: () => {
+                  schemaDiagramOpen = true
+                },
+              },
+              {
+                label: 'Refresh explorer',
+                disabled: !session || connecting || switching || busy,
+                run: db.refreshExplorer,
+              },
+            ],
+          },
+          {
+            label: 'Help',
+            actions: [
+              {
+                label: 'About DBsaur…',
+                run: () => {
+                  aboutOpen = true
+                },
+              },
+            ],
+          },
+        ]"
+      />
       <div v-if="session" class="header-actions">
         <button class="button secondary small" @click="connectionDialog?.showModal()">
           <AppIcon name="plus" :size="15" /><span>New connection</span>
@@ -431,10 +493,11 @@ async function cellSaved() {
           :disabled="connecting || switching"
           @click="db.disconnect"
         >
-          <AppIcon name="disconnect" :size="19" />
+          <AppIcon name="disconnect" :size="16" />
         </button>
       </div>
     </header>
+    <AboutDialog v-if="aboutOpen" @close="aboutOpen = false" />
     <div
       class="app-body"
       :class="{ disconnected: !session, 'resizing-sidebar': sidebar.resizing.value }"
@@ -443,7 +506,7 @@ async function cellSaved() {
       <aside v-if="session" id="database-sidebar" class="sidebar" aria-label="Database explorer">
         <div class="connection-card">
           <div class="connection-summary">
-            <span class="provider-mark"><AppIcon name="database" :size="19" /></span>
+            <span class="provider-mark"><AppIcon name="database" :size="16" /></span>
             <div>
               <strong>{{
                 session?.allDatabases ? session.host : session?.database || 'No connection'
@@ -485,7 +548,7 @@ async function cellSaved() {
                 :disabled="connecting || switching || tablesLoading"
                 @click="schemaDiagramOpen = true"
               >
-                <AppIcon name="diagram" :size="17" />
+                <AppIcon name="diagram" :size="14" />
                 <span>Diagram</span>
               </button>
               <button
@@ -494,7 +557,7 @@ async function cellSaved() {
                 title="Create database"
                 aria-label="Create database"
                 :disabled="connecting || switching || tablesLoading || busy"
-                @click="openSchemaEditor('createDatabase')"
+                @click="editor = 'createDatabase'"
               >
                 <AppIcon name="plus" :size="17" />
               </button>
@@ -573,6 +636,7 @@ async function cellSaved() {
             class="table-tab"
             :class="{ active: activeView === workspaceTabs.key(table) }"
             role="presentation"
+            @contextmenu.prevent.stop="tableContext($event, table)"
           >
             <button
               :id="tableTabId(table)"
@@ -606,123 +670,12 @@ async function cellSaved() {
             </button>
           </div>
         </div>
-        <div class="table-heading">
-          <div class="view-toolbar" role="group" aria-label="Table controls">
-            <div class="tabs" role="tablist" aria-label="Table view">
-              <button
-                id="data-tab"
-                role="tab"
-                :aria-selected="tab === 'data'"
-                :class="{ active: tab === 'data' }"
-                @click="tab = 'data'"
-                @keydown.right="tab = 'structure'"
-              >
-                <AppIcon name="table" :size="15" />{{
-                  workspaceTabs.queryActive.value ? 'Results' : 'Data'
-                }}<span v-if="data">{{ data.rows.length }}</span></button
-              ><button
-                id="structure-tab"
-                role="tab"
-                :aria-selected="tab === 'structure'"
-                :class="{ active: tab === 'structure' }"
-                @click="tab = 'structure'"
-                @keydown.left="tab = 'data'"
-              >
-                <AppIcon name="grid" :size="15" />Structure<span v-if="data">{{
-                  data.columns.length
-                }}</span>
-              </button>
-            </div>
-            <label v-if="tab === 'data'" class="search-box row-search"
-              ><AppIcon name="search" :size="14" /><input
-                v-model="rowFilter"
-                placeholder="Filter this page…"
-                aria-label="Filter rows on this page" /><button
-                v-if="rowFilter"
-                class="icon-button"
-                title="Clear filter"
-                aria-label="Clear filter"
-                @click="rowFilter = ''"
-              >
-                <AppIcon name="close" :size="12" /></button
-            ></label>
-            <div class="table-heading-actions">
-              <button
-                v-if="recordEditable && record && tab === 'data'"
-                class="button secondary small delete-row-button"
-                :disabled="busy || switching"
-                @click="editor = 'delete'"
-              >
-                Delete row
-              </button>
-              <button
-                class="icon-button"
-                title="Refresh rows"
-                aria-label="Refresh rows"
-                :disabled="
-                  busy ||
-                  switching ||
-                  (workspaceTabs.queryActive.value ? !activeQuery : !selectedTable)
-                "
-                @click="db.loadRows"
-              >
-                <AppIcon name="refresh" :size="17" :class="{ spinning: busy }" /></button
-              ><button
-                class="icon-button"
-                title="Export current page as JSON"
-                aria-label="Export current page as JSON"
-                :disabled="!data"
-                @click="exportPage"
-              >
-                <AppIcon name="download" :size="17" />
-              </button>
-            </div>
-            <button
-              v-if="activeQuery"
-              class="text-button back-to-table"
-              :disabled="busy"
-              @click="workspaceTabs.backToTable"
-            >
-              Back to table
-            </button>
-            <span v-if="session.readOnly" class="read-only-label">Read only</span>
-            <div v-if="session.provider !== 'demo' && !session.readOnly" class="mutation-toolbar">
-              <button
-                v-if="editable"
-                class="button secondary small"
-                :disabled="busy || switching"
-                @click="editor = 'insert'"
-              >
-                Insert record
-              </button>
-              <button
-                v-if="
-                  schemaEditable &&
-                  selectedTable?.kind === 'BASE TABLE' &&
-                  !workspaceTabs.queryActive.value
-                "
-                class="button secondary small"
-                :disabled="busy || switching || diagramMutationBusy"
-                @click="openDiagramTableEditor(selectedTable)"
-              >
-                Edit table details
-              </button>
-              <button
-                class="button secondary small"
-                :disabled="busy || switching"
-                @click="openSchemaEditor()"
-              >
-                Database changes
-              </button>
-            </div>
-          </div>
-        </div>
-        <div id="table-grid-region" class="data-body">
+        <div id="table-grid-region" class="data-body" @contextmenu.prevent.stop="dataContext">
           <section
             :key="activeView"
             class="data-content"
-            role="tabpanel"
-            :aria-labelledby="tab === 'data' ? 'data-tab' : 'structure-tab'"
+            role="region"
+            :aria-label="workspaceTabs.queryActive.value ? 'Query results' : 'Table data'"
             :aria-busy="busy"
           >
             <div v-if="busy" class="content-empty" role="status">
@@ -731,11 +684,9 @@ async function cellSaved() {
             </div>
             <template v-else-if="data"
               ><DataGrid
-                v-if="tab === 'data'"
                 :data="data"
                 :sort="sort"
                 :descending="descending"
-                :filter="rowFilter"
                 :sortable="!activeQuery"
                 :selected-row="selectedRow"
                 @select="selectedRow = $event"
@@ -743,31 +694,7 @@ async function cellSaved() {
                 @sort="db.sortBy"
                 @context="rowContext"
               />
-              <div v-else class="grid-scroll">
-                <table class="structure-grid">
-                  <thead>
-                    <tr>
-                      <th>Column</th>
-                      <th>Type</th>
-                      <th>Nullable</th>
-                      <th>Key</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr v-for="column in data.columns" :key="column.name">
-                      <td>{{ column.name }}</td>
-                      <td>{{ column.dataType }}</td>
-                      <td>{{ column.nullable ? 'Yes' : 'No' }}</td>
-                      <td>
-                        <span v-if="column.primaryKey" class="key-label"
-                          ><AppIcon name="key" :size="13" />Primary key</span
-                        ><span v-else class="muted">—</span>
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div></template
-            >
+            </template>
             <div v-else class="content-empty">
               <AppIcon name="table" :size="32" />
               <h2>{{ error ? 'Unable to load this table' : 'Ready when you are' }}</h2>
@@ -791,6 +718,7 @@ async function cellSaved() {
           </section>
         </div>
         <footer v-if="data" class="pagination table-footer" aria-label="Table pagination">
+          <span v-if="session.readOnly" class="read-only-label">Read only</span>
           <span
             >{{
               data.rows.length
@@ -822,7 +750,8 @@ async function cellSaved() {
               @click="db.changePage(page - 1)"
             >
               <AppIcon name="chevron" :size="15" /></button
-            ><span class="page-number">{{ page + 1 }}</span
+            ><span class="page-number" aria-live="polite"
+              >Page {{ page + 1 }}<template v-if="totalPages"> of {{ totalPages }}</template></span
             ><button
               class="icon-button"
               title="Next page"
@@ -865,6 +794,11 @@ async function cellSaved() {
       @prepare-reference="(table, column) => openDiagramTableEditor(table, column)"
       @close="schemaDiagramOpen = false"
     />
+    <TableStructureDialog
+      v-if="structureTable && session"
+      :table="structureTable"
+      @close="structureTable = null"
+    />
     <SchemaTableEditor
       v-if="session && diagramTableEditor !== undefined"
       :provider="session.provider"
@@ -879,12 +813,15 @@ async function cellSaved() {
       v-if="editingCell"
       :column="editingCell.column"
       :row="editingCell.row"
-      :table="selectedTable"
+      :table="editingCell.table"
+      :provider="session?.provider ?? 'postgres'"
       :editable="recordEditable"
       :readonly-reason="
-        editable && !recordEditable
-          ? 'Updating records requires a primary key for this provider.'
-          : undefined
+        workspaceTabs.queryActive.value && !data?.editing
+          ? 'This result cannot be mapped to one editable base table. Use a direct single-table SELECT to edit records.'
+          : editable && !recordEditable
+            ? 'Updating records requires a primary key for this provider.'
+            : undefined
       "
       :apply="db.applyMutation"
       @close="editingCell = null"
@@ -894,12 +831,9 @@ async function cellSaved() {
       v-if="editor && session"
       :mode="editor"
       :provider="session.provider"
-      :table="editor === 'schema' ? schemaTargetTable : selectedTable"
-      :columns="data?.columns || []"
+      :table="mutationTable"
       :row="record"
       :database="session.database"
-      :instance="session.allDatabases"
-      :initial-action="schemaAction"
       :apply="db.applyMutation"
       @close="editor = null"
       @saved="mutationSaved"

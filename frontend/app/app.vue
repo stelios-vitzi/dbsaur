@@ -2,7 +2,6 @@
 import { RouterView, useRoute } from 'vue-router'
 import PrivacyControls from './components/PrivacyControls.vue'
 import ToastHost from './components/ToastHost.vue'
-import DesktopUpdater from './components/DesktopUpdater.vue'
 const route = useRoute()
 </script>
 
@@ -16,7 +15,6 @@ const route = useRoute()
     </RouterView>
     <PrivacyControls />
     <ToastHost />
-    <DesktopUpdater />
   </div>
 </template>
 

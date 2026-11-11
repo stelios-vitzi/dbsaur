@@ -87,20 +87,24 @@ onMounted(() => {
           autocomplete: 'off',
         }),
         EditorView.theme({
-          '&.cm-editor': { height: '100%', backgroundColor: 'var(--canvas)', color: 'var(--text)' },
+          '&.cm-editor': {
+            height: '100%',
+            backgroundColor: 'var(--query-surface)',
+            color: 'var(--text)',
+          },
           '&.cm-focused': { outline: 'none', boxShadow: 'inset 2px 0 var(--accent)' },
           '.cm-scroller': {
             overflow: 'auto',
             fontFamily: 'var(--font-code)',
-            fontSize: '13px',
-            lineHeight: '22px',
+            fontSize: 'var(--text-control)',
+            lineHeight: '20px',
           },
           '.cm-content': { padding: '12px 0', caretColor: 'var(--text)' },
           '.cm-line': { padding: '0 24px 0 0' },
           '.cm-gutters': {
             minWidth: '48px',
             border: 'none',
-            backgroundColor: 'var(--canvas)',
+            backgroundColor: 'var(--query-surface)',
             color: 'var(--muted)',
           },
           '.cm-lineNumbers .cm-gutterElement': { padding: '0 12px 0 8px' },

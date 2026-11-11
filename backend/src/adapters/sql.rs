@@ -1,8 +1,9 @@
 use crate::application::{AppResult, invalid};
 use sqlparser::{
-    ast::{Ident, Statement, VisitMut, VisitorMut},
+    ast::{DataType, Expr, Ident, Statement, VisitMut, VisitorMut},
     dialect::Dialect,
     parser::Parser,
+    tokenizer::Token,
 };
 use std::ops::ControlFlow;
 
@@ -31,6 +32,43 @@ pub fn canonical(statement: &Statement, dialect: &dyn Dialect) -> AppResult<Stri
         return Err(invalid(
             "This SQL syntax cannot be preserved safely. Simplify the statement.",
         ));
+    }
+    Ok(sql)
+}
+
+pub(super) fn canonical_expression(expression: &Expr, dialect: &dyn Dialect) -> AppResult<String> {
+    let mut output = expression.clone();
+    let _ = output.visit(&mut EscapeBrackets);
+    let sql = output.to_string();
+    let mut parser = Parser::new(dialect)
+        .try_with_sql(&sql)
+        .map_err(|_| invalid("Invalid default expression."))?;
+    let reparsed = parser
+        .parse_expr()
+        .map_err(|_| invalid("Invalid default expression."))?;
+    if &reparsed != expression || parser.peek_token().token != Token::EOF {
+        return Err(invalid(
+            "This default expression cannot be preserved safely.",
+        ));
+    }
+    Ok(sql)
+}
+
+pub(super) fn canonical_data_type(
+    data_type: &DataType,
+    dialect: &dyn Dialect,
+) -> AppResult<String> {
+    let mut output = data_type.clone();
+    let _ = output.visit(&mut EscapeBrackets);
+    let sql = output.to_string();
+    let mut parser = Parser::new(dialect)
+        .try_with_sql(&sql)
+        .map_err(|_| invalid("Invalid column type."))?;
+    let reparsed = parser
+        .parse_data_type()
+        .map_err(|_| invalid("Invalid column type."))?;
+    if &reparsed != data_type || parser.peek_token().token != Token::EOF {
+        return Err(invalid("This column type cannot be preserved safely."));
     }
     Ok(sql)
 }

@@ -70,7 +70,7 @@ fn text(row: &Row, name: &str) -> AppResult<String> {
         .ok_or_else(|| invalid("Database metadata is unavailable."))
 }
 async fn metadata(client: &mut SqlClient, schema: &str, table: &str) -> AppResult<Vec<Column>> {
-    let rows = client.query("SELECT c.COLUMN_NAME,c.DATA_TYPE,c.IS_NULLABLE,c.COLUMN_DEFAULT,CAST(CASE WHEN COALESCE(COLUMNPROPERTY(OBJECT_ID(QUOTENAME(c.TABLE_SCHEMA)+'.'+QUOTENAME(c.TABLE_NAME)),c.COLUMN_NAME,'IsIdentity'),0)=1 OR COALESCE(COLUMNPROPERTY(OBJECT_ID(QUOTENAME(c.TABLE_SCHEMA)+'.'+QUOTENAME(c.TABLE_NAME)),c.COLUMN_NAME,'IsComputed'),0)=1 OR COALESCE(COLUMNPROPERTY(OBJECT_ID(QUOTENAME(c.TABLE_SCHEMA)+'.'+QUOTENAME(c.TABLE_NAME)),c.COLUMN_NAME,'GeneratedAlwaysType'),0)<>0 OR c.DATA_TYPE IN ('timestamp','rowversion','geometry','geography','hierarchyid','sql_variant') THEN 1 ELSE 0 END AS bit) AS read_only,CAST(CASE WHEN EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS tc JOIN INFORMATION_SCHEMA.KEY_COLUMN_USAGE k ON tc.CONSTRAINT_CATALOG=k.CONSTRAINT_CATALOG AND tc.CONSTRAINT_SCHEMA=k.CONSTRAINT_SCHEMA AND tc.CONSTRAINT_NAME=k.CONSTRAINT_NAME WHERE tc.CONSTRAINT_TYPE='PRIMARY KEY' AND tc.TABLE_SCHEMA=c.TABLE_SCHEMA AND tc.TABLE_NAME=c.TABLE_NAME AND k.COLUMN_NAME=c.COLUMN_NAME) THEN 1 ELSE 0 END AS bit) AS primary_key FROM INFORMATION_SCHEMA.COLUMNS c WHERE c.TABLE_SCHEMA=@P1 AND c.TABLE_NAME=@P2 ORDER BY c.ORDINAL_POSITION", &[&schema,&table]).await.map_err(driver_error)?.into_first_result().await.map_err(driver_error)?;
+    let rows = client.query("SELECT c.COLUMN_NAME,c.DATA_TYPE,c.IS_NULLABLE,c.COLUMN_DEFAULT,c.COLLATION_NAME,CASE WHEN c.DATA_TYPE IN ('varchar','nvarchar','char','nchar','binary','varbinary') THEN c.DATA_TYPE+'('+CASE WHEN c.CHARACTER_MAXIMUM_LENGTH=-1 THEN 'max' ELSE CONVERT(varchar(10),c.CHARACTER_MAXIMUM_LENGTH) END+')' WHEN c.DATA_TYPE IN ('decimal','numeric') THEN c.DATA_TYPE+'('+CONVERT(varchar(10),c.NUMERIC_PRECISION)+','+CONVERT(varchar(10),c.NUMERIC_SCALE)+')' WHEN c.DATA_TYPE IN ('time','datetime2','datetimeoffset') THEN c.DATA_TYPE+'('+CONVERT(varchar(10),c.DATETIME_PRECISION)+')' ELSE c.DATA_TYPE END AS full_type,(SELECT dc.name FROM sys.default_constraints dc JOIN sys.columns sc ON sc.object_id=dc.parent_object_id AND sc.column_id=dc.parent_column_id WHERE dc.parent_object_id=OBJECT_ID(QUOTENAME(c.TABLE_SCHEMA)+'.'+QUOTENAME(c.TABLE_NAME)) AND sc.name=c.COLUMN_NAME) AS default_constraint,CAST(CASE WHEN COALESCE(COLUMNPROPERTY(OBJECT_ID(QUOTENAME(c.TABLE_SCHEMA)+'.'+QUOTENAME(c.TABLE_NAME)),c.COLUMN_NAME,'IsIdentity'),0)=1 OR COALESCE(COLUMNPROPERTY(OBJECT_ID(QUOTENAME(c.TABLE_SCHEMA)+'.'+QUOTENAME(c.TABLE_NAME)),c.COLUMN_NAME,'IsComputed'),0)=1 OR COALESCE(COLUMNPROPERTY(OBJECT_ID(QUOTENAME(c.TABLE_SCHEMA)+'.'+QUOTENAME(c.TABLE_NAME)),c.COLUMN_NAME,'GeneratedAlwaysType'),0)<>0 OR c.DATA_TYPE IN ('timestamp','rowversion','geometry','geography','hierarchyid','sql_variant') THEN 1 ELSE 0 END AS bit) AS read_only,CAST(CASE WHEN EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS tc JOIN INFORMATION_SCHEMA.KEY_COLUMN_USAGE k ON tc.CONSTRAINT_CATALOG=k.CONSTRAINT_CATALOG AND tc.CONSTRAINT_SCHEMA=k.CONSTRAINT_SCHEMA AND tc.CONSTRAINT_NAME=k.CONSTRAINT_NAME WHERE tc.CONSTRAINT_TYPE='PRIMARY KEY' AND tc.TABLE_SCHEMA=c.TABLE_SCHEMA AND tc.TABLE_NAME=c.TABLE_NAME AND k.COLUMN_NAME=c.COLUMN_NAME) THEN 1 ELSE 0 END AS bit) AS primary_key FROM INFORMATION_SCHEMA.COLUMNS c WHERE c.TABLE_SCHEMA=@P1 AND c.TABLE_NAME=@P2 ORDER BY c.ORDINAL_POSITION", &[&schema,&table]).await.map_err(driver_error)?.into_first_result().await.map_err(driver_error)?;
     rows.iter()
         .map(|row| {
             Ok(Column {
@@ -89,6 +89,33 @@ async fn metadata(client: &mut SqlClient, schema: &str, table: &str) -> AppResul
                     .try_get::<&str, _>("COLUMN_DEFAULT")
                     .map_err(driver_error)?
                     .map(str::to_owned),
+                definition: Some(ColumnDefinition {
+                    data_type: text(row, "full_type")?,
+                    nullable: text(row, "IS_NULLABLE")? == "YES",
+                    default_expression: row
+                        .try_get::<&str, _>("COLUMN_DEFAULT")
+                        .map_err(driver_error)?
+                        .map(str::to_owned),
+                    character_set: None,
+                    collation: row
+                        .try_get::<&str, _>("COLLATION_NAME")
+                        .map_err(driver_error)?
+                        .map(str::to_owned),
+                    comment: String::new(),
+                    extra: if row
+                        .try_get::<bool, _>("read_only")
+                        .map_err(driver_error)?
+                        .unwrap_or(true)
+                    {
+                        "generated".into()
+                    } else {
+                        String::new()
+                    },
+                    default_constraint: row
+                        .try_get::<&str, _>("default_constraint")
+                        .map_err(driver_error)?
+                        .map(str::to_owned),
+                }),
             })
         })
         .collect()
@@ -159,10 +186,26 @@ async fn page(
                 .collect::<AppResult<_>>()
         })
         .collect::<AppResult<_>>()?;
+    let count_sql = format!("SELECT COUNT_BIG(*) AS total FROM {source} AS dbsaur_count");
+    let count = client
+        .query(count_sql, &[])
+        .await
+        .map_err(driver_error)?
+        .into_first_result()
+        .await
+        .map_err(driver_error)?;
+    let total = count
+        .first()
+        .and_then(|row| row.get::<i64, _>("total"))
+        .ok_or_else(|| invalid("The result count is unavailable."))?;
     Ok(TablePage {
         columns,
         rows,
         has_more,
+
+        total_rows: Some(total.to_string()),
+
+        editing: None,
         page: number,
         page_size: size,
     })
@@ -332,10 +375,38 @@ impl DatabaseAdapter for SqlServerAdapter {
     }
     async fn query(&self, input: &ConnectionInput, query: &SqlQuery) -> AppResult<TablePage> {
         let (number, size) = query.bounds().map_err(invalid)?;
-        let sql = super::read_query::select(&query.sql, &sqlparser::dialect::MsSqlDialect {})?;
+        let mut sql = super::read_query::select(&query.sql, &sqlparser::dialect::MsSqlDialect {})?;
+        let mut c = connect(input).await?;
+        let mut edit_plan = None;
+        if let Some(candidate) =
+            super::query_editing::candidate(&sql, &sqlparser::dialect::MsSqlDialect {}, false)
+        {
+            let target_name = candidate
+                .name
+                .iter()
+                .map(|name| quote_identifier(name))
+                .collect::<Vec<_>>()
+                .join(".");
+            let target = c.query("SELECT s.name AS schema_name,t.name AS table_name FROM sys.tables t JOIN sys.schemas s ON s.schema_id=t.schema_id WHERE t.object_id=OBJECT_ID(@P1)",&[&target_name]).await.map_err(driver_error)?.into_first_result().await.map_err(driver_error)?;
+            if let Some(target) = target.first() {
+                let schema = text(target, "schema_name")?;
+                let table = text(target, "table_name")?;
+                let base = metadata(&mut c, &schema, &table).await?;
+                edit_plan = super::query_editing::prepare(
+                    candidate,
+                    schema,
+                    table,
+                    base,
+                    &sqlparser::dialect::MsSqlDialect {},
+                    "sqlserver",
+                );
+            }
+        }
+        if let Some(plan) = &edit_plan {
+            sql = plan.sql.clone();
+        }
         let source = format!("({sql})");
         let describe = format!("SELECT * FROM {source} AS source");
-        let mut c = connect(input).await?;
         // Describing the derived SELECT validates it with SQL Server without executing it.
         let records=c.query("SELECT name,system_type_name,is_nullable,error_number FROM sys.dm_exec_describe_first_result_set(@P1,NULL,0) WHERE is_hidden=0 OR error_number IS NOT NULL ORDER BY column_ordinal",&[&describe]).await.map_err(driver_error)?.into_first_result().await.map_err(driver_error)?;
         let mut names = std::collections::HashSet::new();
@@ -364,12 +435,17 @@ impl DatabaseAdapter for SqlServerAdapter {
                 primary_key: false,
                 read_only: true,
                 default_value: None,
+                definition: None,
             });
         }
         if columns.is_empty() {
             return Err(invalid("Run a SELECT query that returns named columns."));
         }
-        page(&mut c, &source, columns, "(SELECT NULL)", number, size).await
+        let mut result = page(&mut c, &source, columns, "(SELECT NULL)", number, size).await?;
+        if let Some(plan) = edit_plan {
+            super::query_editing::finish(&mut result, plan)?;
+        }
+        Ok(result)
     }
 }
 #[cfg(test)]

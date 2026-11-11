@@ -155,6 +155,56 @@ async fn apply(
     mutation: &Mutation,
     statement: Option<String>,
 ) -> AppResult<u64> {
+    if let Mutation::AlterColumn {
+        schema,
+        table,
+        column,
+        expected,
+        change,
+    } = mutation
+    {
+        let target = format!("{}.{}", identifier(schema)?, identifier(table)?);
+        command(
+            client,
+            &format!("SELECT TOP (1) 1 AS dbsaur_lock FROM {target} WITH (TABLOCKX,HOLDLOCK)"),
+        )
+        .await?;
+        let base_table = client.query("SELECT t.name FROM sys.tables t JOIN sys.schemas s ON s.schema_id=t.schema_id WHERE s.name=@P1 AND t.name=@P2", &[&schema.as_str(),&table.as_str()]).await.map_err(write_error)?.into_first_result().await.map_err(write_error)?;
+        if base_table.len() != 1 {
+            return Err(invalid(
+                "Choose an accessible base table. Views remain read only.",
+            ));
+        }
+        let columns = metadata(client, schema, table).await?;
+        let current = columns
+            .iter()
+            .find(|item| &item.name == column)
+            .and_then(|item| item.definition.as_ref())
+            .ok_or_else(|| invalid("The column no longer exists. Refresh the explorer."))?;
+        let plan = super::super::column_change::plan(
+            "sqlserver",
+            schema,
+            table,
+            column,
+            current,
+            expected,
+            change,
+        )?;
+        for statement in plan.statements {
+            command(client, &statement).await?;
+        }
+        if let Some(name) = plan.rename {
+            let object = format!("{target}.{}", identifier(column)?);
+            client
+                .execute(
+                    "EXEC sys.sp_rename @objname=@P1, @newname=@P2, @objtype=N'COLUMN'",
+                    &[&object.as_str(), &name.as_str()],
+                )
+                .await
+                .map_err(write_error)?;
+        }
+        return Ok(0);
+    }
     if let Some(sql) = statement {
         return counted(client, sql, vec![]).await;
     }
@@ -358,6 +408,7 @@ mod tests {
             primary_key: false,
             read_only: false,
             default_value: None,
+            definition: None,
         };
         assert_eq!(
             parameter(&c, &Some("00aaff".into()), 2).unwrap(),

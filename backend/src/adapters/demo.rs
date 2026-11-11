@@ -37,6 +37,7 @@ fn dataset(table: &str) -> Option<DemoDataset> {
             primary_key: name == "id",
             read_only: true,
             default_value: None,
+            definition: None,
         })
         .collect();
     let names = [
@@ -122,6 +123,11 @@ impl DatabaseAdapter for DemoAdapter {
             )
             .await?;
         let offset = (page * page_size) as usize;
+        result.total_rows = result
+            .total_rows
+            .as_ref()
+            .and_then(|value| value.parse::<usize>().ok())
+            .map(|total| total.min(limit).to_string());
         result.rows.truncate(limit.saturating_sub(offset));
         result.has_more &= limit > offset + page_size as usize;
         Ok(result)
@@ -186,6 +192,7 @@ impl DatabaseAdapter for DemoAdapter {
             });
         }
         let offset = (page * page_size) as usize;
+        let total = rows.len();
         let has_more = rows.len() > offset + page_size as usize;
         Ok(TablePage {
             columns,
@@ -195,6 +202,10 @@ impl DatabaseAdapter for DemoAdapter {
                 .take(page_size as usize)
                 .collect(),
             has_more,
+
+            total_rows: Some(total.to_string()),
+
+            editing: None,
             page,
             page_size,
         })

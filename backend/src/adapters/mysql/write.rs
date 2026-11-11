@@ -126,6 +126,46 @@ pub(crate) async fn mutate(
     input: &ConnectionInput,
     mutation: &Mutation,
 ) -> AppResult<MutationResult> {
+    if let Mutation::AlterColumn {
+        schema,
+        table,
+        column,
+        expected,
+        change,
+    } = mutation
+    {
+        if schema != &input.database {
+            return Err(invalid("Choose a table in the active database."));
+        }
+        let mut connection = connect_mode(input, false).await?;
+        let base_table: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM information_schema.TABLES WHERE TABLE_SCHEMA=? AND TABLE_NAME=? AND TABLE_TYPE='BASE TABLE'").bind(schema).bind(table).fetch_one(&mut connection).await.map_err(write_error)?;
+        if base_table != 1 {
+            return Err(invalid(
+                "Choose an accessible base table. Views remain read only.",
+            ));
+        }
+        let columns = metadata(&mut connection, schema, table, &input.provider)
+            .await
+            .map_err(|_| invalid("Column metadata could not be loaded. Refresh the explorer."))?;
+        let current = columns
+            .iter()
+            .find(|item| &item.name == column)
+            .and_then(|item| item.definition.as_ref())
+            .ok_or_else(|| invalid("The column no longer exists. Refresh the explorer."))?;
+        let plan = super::super::column_change::plan(
+            &input.provider,
+            schema,
+            table,
+            column,
+            current,
+            expected,
+            change,
+        )?;
+        for statement in plan.statements {
+            execute(&mut connection, &statement).await?;
+        }
+        return Ok(MutationResult { affected_rows: 0 });
+    }
     if let Mutation::CreateDatabase { name } | Mutation::DropDatabase { name } = mutation {
         if !input.all_databases {
             return Err(invalid(
@@ -253,7 +293,7 @@ pub(crate) async fn mutate(
             "Record editing requires an InnoDB base table so failed changes can roll back.",
         ));
     }
-    let columns = metadata(&mut tx, schema, table).await?;
+    let columns = metadata(&mut tx, schema, table, &input.provider).await?;
     let mut params: Vec<Option<String>> = Vec::new();
     let mut where_sql = String::new();
     if let Mutation::Update { original, .. } | Mutation::Delete { original, .. } = mutation {
@@ -375,6 +415,7 @@ mod tests {
             primary_key: true,
             read_only: false,
             default_value: None,
+            definition: None,
         };
         assert_eq!(
             key_parameter(&c, &Some("18446744073709551615".into())).unwrap(),
@@ -408,6 +449,7 @@ mod tests {
             primary_key: false,
             read_only: false,
             default_value: None,
+            definition: None,
         };
         assert_eq!(
             parameter(&column, &Some("00aaff".into())).unwrap(),

@@ -104,6 +104,13 @@ pub enum Mutation {
         #[serde(default)]
         add_unique_keys: Vec<Vec<String>>,
     },
+    AlterColumn {
+        schema: String,
+        table: String,
+        column: String,
+        expected: Box<ColumnDefinition>,
+        change: ColumnChange,
+    },
     Execute {
         sql: String,
     },
@@ -272,6 +279,41 @@ pub struct Column {
     pub primary_key: bool,
     pub read_only: bool,
     pub default_value: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub definition: Option<ColumnDefinition>,
+}
+
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ColumnDefinition {
+    pub data_type: String,
+    pub nullable: bool,
+    pub default_expression: Option<String>,
+    pub character_set: Option<String>,
+    pub collation: Option<String>,
+    pub comment: String,
+    pub extra: String,
+    pub default_constraint: Option<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(
+    tag = "kind",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
+pub enum ColumnChange {
+    Rename {
+        name: String,
+    },
+    Drop,
+    Definition {
+        data_type: String,
+        nullable: bool,
+        default_expression: Option<String>,
+        character_set: Option<String>,
+        collation: Option<String>,
+    },
 }
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -281,6 +323,17 @@ pub struct TablePage {
     pub has_more: bool,
     pub page: u32,
     pub page_size: u32,
+    pub total_rows: Option<String>,
+    pub editing: Option<QueryEditing>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct QueryEditing {
+    pub schema: String,
+    pub table: String,
+    pub columns: std::collections::BTreeMap<String, String>,
+    pub originals: Vec<Map<String, Value>>,
 }
 
 #[derive(Deserialize)]

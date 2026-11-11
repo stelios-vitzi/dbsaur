@@ -2,7 +2,13 @@
 import { ref, onMounted, onScopeDispose, useTemplateRef } from 'vue'
 
 import type { ContextAction } from '../../shared/database'
-const props = defineProps<{ x: number; y: number; label: string; actions: ContextAction[] }>()
+const props = defineProps<{
+  x: number
+  y: number
+  label: string
+  actions: ContextAction[]
+  compact?: boolean
+}>()
 const emit = defineEmits<{ close: [] }>()
 const menu = useTemplateRef<HTMLElement>('menu')
 const left = ref(props.x)
@@ -59,6 +65,7 @@ function choose(action: ContextAction) {
     <div
       ref="menu"
       class="context-menu"
+      :class="{ 'context-menu-compact': compact }"
       role="menu"
       :aria-label="label"
       :style="{ left: `${left}px`, top: `${top}px` }"

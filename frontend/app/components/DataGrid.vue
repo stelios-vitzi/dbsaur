@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch, useId } from 'vue'
+import { computed, ref, watch, useId } from 'vue'
 import AppIcon from './AppIcon.vue'
 import GeometryMap from './GeometryMap.vue'
 
@@ -9,7 +9,6 @@ const props = defineProps<{
   data: TablePage
   sort?: string
   descending: boolean
-  filter: string
   sortable?: boolean
   selectedRow?: number | null
 }>()
@@ -24,20 +23,44 @@ const headerId = useId()
 const geometry = ref<{ value: string; column: string } | null>(null)
 const columnWidths = ref<Record<number, number>>({})
 const resize = ref<{ index: number; startX: number; startWidth: number } | null>(null)
-const minimumColumnWidth = 80
+const minimumColumnWidth = 72
 const maximumColumnWidth = 720
-watch([() => props.data, () => props.filter], () => {
-  selectedCell.value = null
-  geometry.value = null
+const textMeasure = document.createElement('canvas').getContext('2d')!
+const automaticColumnWidths = computed(() => {
+  const font = getComputedStyle(document.documentElement).getPropertyValue('--font-ui')
+  textMeasure.font = `500 12px ${font}`
+  const headings = props.data.columns.map(
+    (column) => textMeasure.measureText(column.name).width + 28 + 18 + (column.primaryKey ? 18 : 0),
+  )
+  textMeasure.font = `400 12px ${font}`
+  return props.data.columns.map((column, index) => {
+    if (isSpatialType(column.dataType)) return 160
+    let width = headings[index] ?? minimumColumnWidth
+    for (const row of props.data.rows) {
+      if (width >= 160) break
+      const value = row[column.name]
+      width = Math.max(
+        width,
+        textMeasure.measureText(display(value)).width + 28 + (typeof value === 'boolean' ? 12 : 0),
+      )
+    }
+    return Math.ceil(Math.max(minimumColumnWidth, Math.min(160, width)))
+  })
 })
+const widths = computed(() =>
+  props.data.columns.map(
+    (_, index) => columnWidths.value[index] ?? automaticColumnWidths.value[index] ?? 160,
+  ),
+)
+watch(
+  () => props.data,
+  () => {
+    selectedCell.value = null
+    geometry.value = null
+  },
+)
 function display(value: unknown) {
   return value === null ? 'NULL' : typeof value === 'object' ? JSON.stringify(value) : String(value)
-}
-function matches(row: Record<string, unknown>, filter: string) {
-  return (
-    !filter ||
-    Object.values(row).some((value) => display(value).toLowerCase().includes(filter.toLowerCase()))
-  )
 }
 function startResize(event: PointerEvent, index: number) {
   if (event.button !== 0) return
@@ -69,7 +92,8 @@ function keyResize(event: KeyboardEvent, index: number) {
   event.preventDefault()
   event.stopPropagation()
   const cell = (event.currentTarget as HTMLElement).parentElement
-  const current = columnWidths.value[index] || cell?.getBoundingClientRect().width || 160
+  const current =
+    columnWidths.value[index] || cell?.getBoundingClientRect().width || widths.value[index] || 160
   const step = event.shiftKey ? 48 : 16
   columnWidths.value[index] =
     event.key === 'Home'
@@ -87,7 +111,7 @@ function keyResize(event: KeyboardEvent, index: number) {
     <table
       class="data-grid"
       :style="{
-        width: `${58 + data.columns.reduce((total, _, index) => total + (columnWidths[index] ?? 160), 0)}px`,
+        width: `${58 + widths.reduce((total, width) => total + width, 0)}px`,
       }"
     >
       <colgroup>
@@ -95,7 +119,7 @@ function keyResize(event: KeyboardEvent, index: number) {
         <col
           v-for="(column, index) in data.columns"
           :key="column.name + '-width'"
-          :style="{ width: (columnWidths[index] ?? 160) + 'px' }"
+          :style="{ width: widths[index] + 'px' }"
         />
       </colgroup>
       <thead>
@@ -133,7 +157,7 @@ function keyResize(event: KeyboardEvent, index: number) {
               :aria-label="`Resize ${column.name} column`"
               :aria-valuemin="minimumColumnWidth"
               :aria-valuemax="maximumColumnWidth"
-              :aria-valuenow="columnWidths[index] ?? 160"
+              :aria-valuenow="widths[index]"
               title="Drag to resize. Arrow keys adjust width."
               @pointerdown="startResize($event, index)"
               @pointermove="moveResize"
@@ -148,7 +172,6 @@ function keyResize(event: KeyboardEvent, index: number) {
       <tbody>
         <template v-for="(row, index) in data.rows" :key="index"
           ><tr
-            v-if="matches(row, filter)"
             :class="{ 'selected-row': selectedRow === index }"
             :aria-selected="selectedRow === index"
             @click="emit('select', index)"
@@ -211,16 +234,10 @@ function keyResize(event: KeyboardEvent, index: number) {
         >
       </tbody>
     </table>
-    <div v-if="!data.rows.some((row) => matches(row, filter))" class="grid-empty">
-      <AppIcon name="search" :size="24" />
-      <h3>{{ filter ? 'No matches on this page' : 'This table is empty' }}</h3>
-      <p>
-        {{
-          filter
-            ? 'Try another filter, or clear it to see all rows.'
-            : 'The table structure is available in the Structure tab.'
-        }}
-      </p>
+    <div v-if="!data.rows.length" class="grid-empty">
+      <AppIcon name="table" :size="24" />
+      <h3>This table is empty</h3>
+      <p>Right-click the table in the explorer to view its structure.</p>
     </div>
   </div>
   <GeometryMap

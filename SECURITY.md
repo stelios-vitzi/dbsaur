@@ -51,12 +51,21 @@ Tauri application. There is no standalone server or multi-user deployment mode.
   may have side effects outside ordinary transaction rollback.
 - Use SELECT-only accounts for browsing. Explicit writes commit after choosing Save and
   can destroy data; keep tested backups. MySQL/MariaDB DDL implicitly commits.
+- Column definition changes compare a metadata snapshot before applying. PostgreSQL
+  and SQL Server keep these checks and changes in a transaction. MySQL/MariaDB
+  apply one ALTER statement; their implicit DDL commit does not provide the same
+  transactional protection against concurrent schema changes. Column deletion
+  requires typing its name and confirming Save; dependent keys/indexes can change.
 - Credentials stay in bounded local process memory unless explicitly saved to the
   encrypted vault. Restrict its directory and keep the key separate from backups.
   Saved SQL, exports, clipboard contents, webview caches, OS memory/dumps,
   and database logs need their own protection.
 - Pagination limits rows, not bytes. Large values and expensive queries can still
   consume memory and database resources. This is not a hostile multi-tenant service.
+- Editable single-table query results include hidden source-record snapshots in the
+  response, even for partial projections. Record changes still require explicit
+  Save confirmation and stale-row checks. Joins and aggregates do not gain editing
+  rights from matching column names. Exact page counts share query timeouts.
 
 ## Release security gate — 11 November 2026
 

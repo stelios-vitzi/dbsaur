@@ -269,9 +269,41 @@ impl DatabaseAdapter for PostgresAdapter {
         let (page, page_size) = query.bounds().map_err(invalid)?;
         let mut connection = connect(input).await?;
         let mut tx = begin(&mut connection).await?;
+        let mut edit_plan = None;
+        if let Some(candidate) = super::query_editing::candidate(
+            query.statement(),
+            &sqlparser::dialect::PostgreSqlDialect {},
+            true,
+        ) {
+            let source = candidate
+                .name
+                .iter()
+                .map(|name| quote_identifier(name))
+                .collect::<Vec<_>>()
+                .join(".");
+            let target = sqlx::query("SELECT n.nspname AS schema,c.relname AS name FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace WHERE c.oid=to_regclass($1) AND c.relkind IN ('r','p')")
+                .bind(source).fetch_optional(&mut *tx).await?;
+            if let Some(target) = target {
+                let schema: String = target.get("schema");
+                let table: String = target.get("name");
+                let base = metadata(&mut tx, &schema, &table).await?;
+                edit_plan = super::query_editing::prepare(
+                    candidate,
+                    schema,
+                    table,
+                    base,
+                    &sqlparser::dialect::PostgreSqlDialect {},
+                    "postgres",
+                );
+            }
+        }
+        let sql_source = edit_plan
+            .as_ref()
+            .map(|plan| plan.sql.as_str())
+            .unwrap_or_else(|| query.statement());
         // Preparing a derived-table SELECT uses PostgreSQL's parser and single-statement
         // extended protocol. Commands cannot run here; execution remains READ ONLY.
-        let source = format!("SELECT * FROM (\n{}\n) AS webdb_query", query.statement());
+        let source = format!("SELECT * FROM (\n{}\n) AS webdb_query", sql_source);
         let statement = (&mut *tx)
             .prepare(sqlx::AssertSqlSafe(source.as_str()).into_sql_str())
             .await
@@ -303,6 +335,7 @@ impl DatabaseAdapter for PostgresAdapter {
                 primary_key: false,
                 read_only: true,
                 default_value: None,
+                definition: None,
             });
         }
         if columns.is_empty() {
@@ -311,7 +344,7 @@ impl DatabaseAdapter for PostgresAdapter {
         let sql = format!(
             "SELECT to_jsonb(record) AS value FROM (SELECT {} FROM (\n{}\n) AS webdb_query LIMIT $1 OFFSET $2) AS record",
             projection.join(", "),
-            query.statement()
+            sql_source
         );
         // SQL is intentionally user-authored. Generated identifiers are quoted and
         // pagination values are bound; the read-only transaction is the write barrier.
@@ -330,14 +363,27 @@ impl DatabaseAdapter for PostgresAdapter {
                 value.as_object().cloned().unwrap_or_default()
             })
             .collect();
+        let count_sql = format!("SELECT COUNT(*) AS total FROM (\n{sql_source}\n) AS dbsaur_count");
+        let total: i64 = sqlx::query_scalar(sqlx::AssertSqlSafe(count_sql.as_str()))
+            .fetch_one(&mut *tx)
+            .await
+            .map_err(query_error)?;
         tx.rollback().await?;
-        Ok(TablePage {
+        let mut result = TablePage {
             columns,
             rows,
             has_more,
+
+            total_rows: Some(total.to_string()),
+
+            editing: None,
             page,
             page_size,
-        })
+        };
+        if let Some(plan) = edit_plan {
+            super::query_editing::finish(&mut result, plan)?;
+        }
+        Ok(result)
     }
     async fn tables(&self, input: &ConnectionInput) -> AppResult<Vec<Table>> {
         let mut connection = connect(input).await?;
@@ -427,30 +473,7 @@ impl DatabaseAdapter for PostgresAdapter {
         let (page, page_size) = query.bounds().map_err(invalid)?;
         let mut connection = connect(input).await?;
         let mut tx = begin(&mut connection).await?;
-        let metadata = sqlx::query(r#"SELECT c.column_name, CASE WHEN c.udt_name IN ('geometry', 'geography') THEN c.udt_name ELSE c.data_type END AS data_type, c.is_nullable, c.column_default,
-          (c.is_generated='ALWAYS' OR COALESCE(c.identity_generation='ALWAYS', false)) AS read_only,
-          EXISTS (SELECT 1 FROM information_schema.table_constraints tc JOIN information_schema.key_column_usage k
-          ON tc.constraint_catalog=k.constraint_catalog AND tc.constraint_schema=k.constraint_schema AND tc.constraint_name=k.constraint_name
-          WHERE tc.constraint_type='PRIMARY KEY' AND tc.table_schema=c.table_schema AND tc.table_name=c.table_name AND k.table_schema=c.table_schema AND k.table_name=c.table_name AND k.column_name=c.column_name) AS primary_key
-          FROM information_schema.columns c WHERE c.table_schema=$1 AND c.table_name=$2 ORDER BY c.ordinal_position"#)
-            .bind(&query.schema).bind(&query.table).fetch_all(&mut *tx).await?;
-        if metadata.is_empty() {
-            return Err(AppError(
-                ErrorKind::NotFound,
-                "Table not found or not accessible.",
-            ));
-        }
-        let columns: Vec<Column> = metadata
-            .iter()
-            .map(|r| Column {
-                name: r.get("column_name"),
-                data_type: r.get("data_type"),
-                nullable: r.get::<String, _>("is_nullable") == "YES",
-                primary_key: r.get("primary_key"),
-                read_only: r.get("read_only"),
-                default_value: r.get("column_default"),
-            })
-            .collect();
+        let columns = metadata(&mut tx, &query.schema, &query.table).await?;
         if let Some(sort) = &query.sort
             && !columns.iter().any(|c| &c.name == sort)
         {
@@ -530,11 +553,23 @@ impl DatabaseAdapter for PostgresAdapter {
                 value.as_object().cloned().unwrap_or_default()
             })
             .collect();
+        let count_sql = format!(
+            "SELECT COUNT(*) FROM {}.{}",
+            quote_identifier(&query.schema),
+            quote_identifier(&query.table)
+        );
+        let total: i64 = sqlx::query_scalar(sqlx::AssertSqlSafe(count_sql.as_str()))
+            .fetch_one(&mut *tx)
+            .await?;
         tx.commit().await?;
         Ok(TablePage {
             columns,
             rows,
             has_more,
+
+            total_rows: Some(total.to_string()),
+
+            editing: None,
             page,
             page_size,
         })
@@ -551,4 +586,64 @@ mod tests {
             "\"a\"\"; DROP TABLE users;--\""
         );
     }
+}
+
+fn column_definition(row: &sqlx::postgres::PgRow) -> ColumnDefinition {
+    ColumnDefinition {
+        data_type: row.get("full_type"),
+        nullable: row.get::<String, _>("is_nullable") == "YES",
+        default_expression: row.get("column_default"),
+        character_set: row.get("character_set"),
+        collation: row.get("collation_name"),
+        comment: String::new(),
+        extra: row.get("schema_extra"),
+        default_constraint: None,
+    }
+}
+pub(super) async fn schema_column(
+    connection: &mut sqlx::PgConnection,
+    schema: &str,
+    table: &str,
+    column: &str,
+) -> AppResult<ColumnDefinition> {
+    let row = sqlx::query("SELECT pg_catalog.format_type(a.atttypid,a.atttypmod) AS full_type,c.is_nullable,c.column_default,CASE WHEN c.collation_name IS NULL THEN NULL ELSE quote_ident(c.collation_schema)||'.'||quote_ident(c.collation_name) END AS collation_name,current_setting('server_encoding') AS character_set,CASE WHEN c.is_generated='ALWAYS' OR c.is_identity='YES' THEN 'generated' ELSE '' END AS schema_extra FROM information_schema.columns c JOIN pg_catalog.pg_class t ON t.relname=c.table_name JOIN pg_catalog.pg_namespace n ON n.oid=t.relnamespace AND n.nspname=c.table_schema JOIN pg_catalog.pg_attribute a ON a.attrelid=t.oid AND a.attname=c.column_name AND a.attnum>0 AND NOT a.attisdropped WHERE c.table_schema=$1 AND c.table_name=$2 AND c.column_name=$3 AND t.relkind IN ('r','p')")
+        .bind(schema).bind(table).bind(column).fetch_optional(connection).await?
+        .ok_or_else(|| invalid("Choose an existing column in an accessible base table."))?;
+    Ok(column_definition(&row))
+}
+
+async fn metadata(
+    connection: &mut PgConnection,
+    schema: &str,
+    table: &str,
+) -> AppResult<Vec<Column>> {
+    let metadata = sqlx::query(r#"SELECT c.column_name, CASE WHEN c.udt_name IN ('geometry', 'geography') THEN c.udt_name ELSE c.data_type END AS data_type, c.is_nullable, c.column_default,
+          (SELECT pg_catalog.format_type(a.atttypid,a.atttypmod) FROM pg_catalog.pg_attribute a JOIN pg_catalog.pg_class t ON t.oid=a.attrelid JOIN pg_catalog.pg_namespace n ON n.oid=t.relnamespace WHERE n.nspname=c.table_schema AND t.relname=c.table_name AND a.attname=c.column_name AND a.attnum>0 AND NOT a.attisdropped) AS full_type,
+          CASE WHEN c.collation_name IS NULL THEN NULL ELSE quote_ident(c.collation_schema)||'.'||quote_ident(c.collation_name) END AS collation_name,current_setting('server_encoding') AS character_set,
+          CASE WHEN c.is_generated='ALWAYS' OR c.is_identity='YES' THEN 'generated' ELSE '' END AS schema_extra,
+          (c.is_generated='ALWAYS' OR COALESCE(c.identity_generation='ALWAYS', false)) AS read_only,
+          EXISTS (SELECT 1 FROM information_schema.table_constraints tc JOIN information_schema.key_column_usage k
+          ON tc.constraint_catalog=k.constraint_catalog AND tc.constraint_schema=k.constraint_schema AND tc.constraint_name=k.constraint_name
+          WHERE tc.constraint_type='PRIMARY KEY' AND tc.table_schema=c.table_schema AND tc.table_name=c.table_name AND k.table_schema=c.table_schema AND k.table_name=c.table_name AND k.column_name=c.column_name) AS primary_key
+          FROM information_schema.columns c WHERE c.table_schema=$1 AND c.table_name=$2 ORDER BY c.ordinal_position"#)
+            .bind(schema).bind(table).fetch_all(connection).await?;
+    if metadata.is_empty() {
+        return Err(AppError(
+            ErrorKind::NotFound,
+            "Table not found or not accessible.",
+        ));
+    }
+    let columns: Vec<Column> = metadata
+        .iter()
+        .map(|r| Column {
+            name: r.get("column_name"),
+            data_type: r.get("data_type"),
+            nullable: r.get::<String, _>("is_nullable") == "YES",
+            primary_key: r.get("primary_key"),
+            read_only: r.get("read_only"),
+            default_value: r.get("column_default"),
+            definition: Some(column_definition(r)),
+        })
+        .collect();
+    Ok(columns)
 }

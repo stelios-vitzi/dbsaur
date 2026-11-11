@@ -107,6 +107,35 @@ pub(super) async fn mutate(
         .execute(&mut *tx)
         .await?;
     let affected_rows = match mutation {
+        Mutation::AlterColumn {
+            schema,
+            table,
+            column,
+            expected,
+            change,
+        } => {
+            let target = format!("{}.{}", identifier(schema)?, identifier(table)?);
+            let lock = format!("LOCK TABLE {target} IN ACCESS EXCLUSIVE MODE");
+            sqlx::query(sqlx::AssertSqlSafe(lock.as_str()))
+                .execute(&mut *tx)
+                .await
+                .map_err(write_error)?;
+            let current = super::schema_column(&mut tx, schema, table, column)
+                .await
+                .map_err(|_| {
+                    invalid("Column metadata could not be loaded. Refresh the explorer.")
+                })?;
+            let plan = super::super::column_change::plan(
+                "postgres", schema, table, column, &current, expected, change,
+            )?;
+            for statement in plan.statements {
+                sqlx::query(sqlx::AssertSqlSafe(statement.as_str()))
+                    .execute(&mut *tx)
+                    .await
+                    .map_err(write_error)?;
+            }
+            0
+        }
         Mutation::Execute { sql } => {
             if sql.trim().is_empty() || sql.len() > 12_000 {
                 return Err(invalid("Enter one SQL statement of at most 12,000 bytes."));

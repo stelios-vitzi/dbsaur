@@ -355,6 +355,7 @@ mod tests {
             primary_key: false,
             read_only: false,
             default_value: None,
+            definition: None,
         }];
         assert!(keys(&columns, serde_json::json!({"id":"1"}).as_object().unwrap()).is_err());
     }

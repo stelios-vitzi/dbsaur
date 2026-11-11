@@ -93,6 +93,36 @@ test('Cancel discards a mutation without writing or reporting success', async (t
   assert.equal(host.messages.value.length, 0)
 })
 
+test('column deletion and definition snapshots require an explicit save', async (t) => {
+  const { db, host, writes } = setup(t)
+  const mutation = {
+    action: 'alterColumn',
+    schema: 'public',
+    table: 'items',
+    column: 'name',
+    expected: {
+      dataType: 'text',
+      nullable: true,
+      defaultExpression: null,
+      characterSet: 'UTF8',
+      collation: null,
+      comment: '',
+      extra: '',
+      defaultConstraint: null,
+    },
+    change: { kind: 'drop' },
+  }
+  const result = db.applyMutation(mutation)
+  assert.equal(writes.length, 0)
+  mutation.expected.dataType = 'integer'
+  mutation.change.kind = 'definition'
+  host.respond(host.messages.value[0].id, true)
+  await result
+  assert.equal(writes.length, 1)
+  assert.equal(writes[0].body.mutation.expected.dataType, 'text')
+  assert.deepEqual(writes[0].body.mutation.change, { kind: 'drop' })
+})
+
 test('connection changes and owner disposal cancel pending writes', async (t) => {
   const { db, host, writes, scope, cancelled } = setup(t)
   for (const cancel of [

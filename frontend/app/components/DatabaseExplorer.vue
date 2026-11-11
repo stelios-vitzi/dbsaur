@@ -117,7 +117,7 @@ watch(
             @click="emit('choose', activeDatabase, table)"
             @contextmenu.prevent.stop="emit('context', $event, table)"
           >
-            <AppIcon name="table" :size="15" /><span>{{ table.name }}</span>
+            <AppIcon name="table" :size="13" /><span>{{ table.name }}</span>
           </button>
         </div>
       </section>

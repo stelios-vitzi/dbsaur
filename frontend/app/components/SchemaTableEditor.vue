@@ -1,11 +1,13 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, useTemplateRef } from 'vue'
+import { ref, computed, onMounted, onScopeDispose, useTemplateRef } from 'vue'
 import { useActionFeedback } from '../composables/useToast'
 import AppIcon from './AppIcon.vue'
+import ColumnEditor from './ColumnEditor.vue'
+import { $fetch } from '../services/http'
 
 import { DatabaseChangeCancelled } from '../utils/databaseChange'
 import { providerOptions, quoteIdentifier } from '../providers'
-import type { Mutation, TableInfo } from '../../shared/database'
+import type { ColumnInfo, Mutation, TableInfo, TablePage } from '../../shared/database'
 
 interface NewField {
   name: string
@@ -31,6 +33,37 @@ const props = defineProps<{
 }>()
 const emit = defineEmits<{ close: []; saved: [] }>()
 const dialog = useTemplateRef<HTMLDialogElement>('dialog')
+const columnDefinitions = ref<ColumnInfo[]>([])
+const columnsLoading = ref(false)
+const columnError = ref('')
+const editingColumn = ref<ColumnInfo & { definition: NonNullable<ColumnInfo['definition']> }>()
+const metadataController = new AbortController()
+onScopeDispose(() => metadataController.abort())
+async function loadColumnDefinitions() {
+  if (!props.table) return
+  columnsLoading.value = true
+  columnError.value = ''
+  try {
+    const page = await $fetch<TablePage>('/api/rows', {
+      query: { schema: props.table.schema, table: props.table.name, page: 0, pageSize: 1 },
+      signal: metadataController.signal,
+    })
+    columnDefinitions.value = page.columns
+    if (page.columns.some((column) => !column.definition))
+      columnError.value =
+        'Column definitions are unavailable. Restart the desktop app with the updated backend.'
+  } catch {
+    if (!metadataController.signal.aborted)
+      columnError.value = 'Could not load column definitions. Try again.'
+  } finally {
+    columnsLoading.value = false
+  }
+}
+function editExistingColumn(name: string) {
+  if (saving.value || fields.value.length || pendingKeyMutation.value) return
+  const column = columnDefinitions.value.find((item) => item.name === name)
+  if (column?.definition) editingColumn.value = { ...column, definition: column.definition }
+}
 const options = computed(() => providerOptions(props.provider))
 const typeSuggestions = computed(() => {
   const common = ['smallint', 'integer', 'bigint', 'varchar(255)', 'text', 'decimal(10,2)', 'date']
@@ -380,143 +413,52 @@ async function save() {
     saving.value = false
   }
 }
-onMounted(() => dialog.value?.showModal())
+onMounted(() => {
+  dialog.value?.showModal()
+  void loadColumnDefinitions()
+})
 </script>
 
 <template>
   <dialog
     ref="dialog"
-    class="mutation-dialog schema-table-editor"
-    :aria-label="table ? 'Edit table details' : 'Create table'"
+    class="schema-table-editor"
+    :aria-label="table ? 'Edit table schema' : 'Create table'"
     @cancel="saving && $event.preventDefault()"
     @close="emit('close')"
   >
-    <form @submit.prevent="save">
-      <div class="inspector-heading">
-        <h2>{{ table ? 'Edit table details' : 'Create table' }}</h2>
+    <form class="schema-editor-form" @submit.prevent="save">
+      <header class="schema-editor-header">
+        <div>
+          <h2>{{ table ? 'Edit table schema' : 'Create table' }}</h2>
+          <p>
+            {{ database
+            }}<template v-if="table"
+              ><span class="schema-path-divider">/</span>{{ table.schema }}.{{
+                table.name
+              }}</template
+            >
+          </p>
+        </div>
         <button
           type="button"
           class="icon-button"
-          aria-label="Close editor"
+          aria-label="Close schema editor"
           :disabled="saving"
           @click="dialog?.close()"
         >
           <AppIcon name="close" :size="18" />
         </button>
-      </div>
-      <p class="muted">
-        {{ database }}<template v-if="table"> / {{ table.schema }}.{{ table.name }}</template>
-      </p>
-      <p v-if="suggestUniqueColumn" class="muted">
-        A unique key for {{ suggestUniqueColumn }} is selected below so other tables can reference
-        it. Review and apply this key, then return to the relationship. Existing values must be
-        unique.
-      </p>
-      <template v-if="!table">
-        <label
-          >Schema<input
-            v-model="schema"
-            required
-            :maxlength="options.nameLimit"
-            autocomplete="off"
-            spellcheck="false"
-        /></label>
-        <label
-          >Table name<input
-            v-model="tableName"
-            required
-            :maxlength="options.nameLimit"
-            autocomplete="off"
-            spellcheck="false"
-        /></label>
-      </template>
-      <section v-else class="schema-existing-fields" aria-label="Existing fields">
-        <h3>Existing fields</h3>
-        <div v-for="column in knownColumns" :key="column" class="schema-existing-field">
-          <AppIcon :name="primaryFields.includes(column) ? 'key' : 'table'" :size="14" />
-          <span>{{ column }}</span>
-          <label v-if="keyMetadataAvailable" class="schema-key-check">
-            <input
-              type="checkbox"
-              :checked="primaryFields.includes(column)"
-              :disabled="saving"
-              @change="setPrimaryColumn(column, ($event.target as HTMLInputElement).checked)"
-            />
-            PK
-          </label>
-          <small v-else-if="table.primaryKeys?.includes(column)">PK</small>
-          <small v-if="table.foreignKeys?.some((key) => key.column === column)">FK</small>
-        </div>
-        <p v-if="!keyMetadataAvailable" class="muted">
-          Key details are unavailable from this backend version. Refresh the explorer to edit keys.
+      </header>
+      <div class="schema-editor-body">
+        <p v-if="suggestUniqueColumn" class="schema-reference-note">
+          A unique key for <strong>{{ suggestUniqueColumn }}</strong> is selected below. Apply it
+          before returning to the relationship. Existing values must be unique.
         </p>
-      </section>
-      <section v-if="table" class="schema-key-editor" aria-label="Unique key constraints">
-        <div class="schema-fields-heading">
-          <h3>Unique keys</h3>
-          <button
-            type="button"
-            class="button secondary small"
-            :disabled="saving || !keyMetadataAvailable || uniqueKeys.length >= 32"
-            @click="addUniqueKey"
-          >
-            <AppIcon name="plus" :size="15" /> Add unique key
-          </button>
-        </div>
-        <p class="muted">
-          Select one or more fields for each unique key. Remove a key with the minus button.
-        </p>
-        <p v-if="!uniqueKeys.length" class="muted">No unique keys defined.</p>
-        <div v-for="key in uniqueKeys" :key="key.id" class="schema-unique-key">
-          <small class="schema-unique-key-name">{{ key.name ?? 'New unique key' }}</small>
-          <div class="schema-unique-key-fields">
-            <label v-for="column in keyColumns" :key="column" class="schema-key-check">
-              <input
-                type="checkbox"
-                :checked="key.columns.includes(column)"
-                :disabled="saving || !keyMetadataAvailable"
-                @change="setUniqueColumn(key, column, ($event.target as HTMLInputElement).checked)"
-              />
-              {{ column }}
-            </label>
-          </div>
-          <button
-            type="button"
-            class="icon-button schema-field-remove"
-            :aria-label="`Remove unique key ${key.id}`"
-            title="Remove unique key"
-            :disabled="saving || !keyMetadataAvailable"
-            @click="uniqueKeys = uniqueKeys.filter((item) => item.id !== key.id)"
-          >
-            <AppIcon name="minus" :size="16" />
-          </button>
-        </div>
-      </section>
-      <section class="schema-new-fields" aria-label="Fields to add">
-        <div class="schema-fields-heading">
-          <h3>{{ table ? 'Add fields' : 'Fields' }}</h3>
-          <button
-            type="button"
-            class="button secondary small"
-            :disabled="saving || fields.length >= 50"
-            @click="addField"
-          >
-            <AppIcon name="plus" :size="15" /> Add field
-          </button>
-        </div>
-        <p v-if="!fields.length" class="muted">Add a field to continue.</p>
-        <p
-          v-if="fields.some((field) => field.dataType && !validDataType(field.dataType))"
-          class="schema-field-validation"
-          role="status"
-        >
-          Choose a supported database type such as integer, varchar(255), or decimal(10,2).
-        </p>
-        <div v-for="(field, index) in fields" :key="index" class="schema-new-field">
+        <div v-if="!table" class="schema-table-identity">
           <label
-            >Field name<input
-              v-model="field.name"
-              @input="renameField(field)"
+            >Schema<input
+              v-model="schema"
               required
               :maxlength="options.nameLimit"
               :disabled="saving"
@@ -524,68 +466,259 @@ onMounted(() => dialog.value?.showModal())
               spellcheck="false"
           /></label>
           <label
-            >Type<input
-              v-model="field.dataType"
+            >Table name<input
+              v-model="tableName"
               required
-              maxlength="128"
+              :maxlength="options.nameLimit"
               :disabled="saving"
-              placeholder="varchar(255)"
-              list="schema-field-type-options"
               autocomplete="off"
               spellcheck="false"
           /></label>
-          <label class="schema-field-check">
-            <input
-              v-model="field.nullable"
-              type="checkbox"
-              :disabled="saving || field.primaryKey"
-            />
-            Nullable
-          </label>
-          <label v-if="canAddPrimaryKey || table" class="schema-field-check">
-            <input
-              v-model="field.primaryKey"
-              type="checkbox"
-              :disabled="
-                saving ||
-                (table && !keyMetadataAvailable) ||
-                (!table && fields.some((item, itemIndex) => itemIndex !== index && item.primaryKey))
-              "
-            />
-            Primary key
-          </label>
-          <label v-if="!table" class="schema-field-check">
-            <input v-model="field.unique" type="checkbox" :disabled="saving || field.primaryKey" />
-            Unique
-          </label>
+        </div>
+        <div v-if="table" class="schema-editor-layout">
+          <section class="schema-existing-fields" aria-label="Existing fields">
+            <div class="schema-section-heading">
+              <h3>Columns</h3>
+              <span>{{ knownColumns.length }} fields</span>
+            </div>
+            <div class="schema-column-list">
+              <div class="schema-column-head" aria-hidden="true">
+                <span>Column name</span><span>Primary key</span><span>References</span>
+              </div>
+              <div v-for="column in knownColumns" :key="column" class="schema-existing-field">
+                <button
+                  type="button"
+                  class="schema-column-name"
+                  :title="'Edit column ' + column"
+                  :aria-label="'Edit column ' + column"
+                  :disabled="
+                    saving ||
+                    columnsLoading ||
+                    !columnDefinitions.find((item) => item.name === column)?.definition ||
+                    fields.length > 0 ||
+                    !!pendingKeyMutation
+                  "
+                  @click="editExistingColumn(column)"
+                >
+                  <AppIcon
+                    :name="primaryFields.includes(column) ? 'key' : 'table'"
+                    :size="14"
+                  /><span>{{ column }}</span
+                  ><AppIcon class="schema-column-edit-icon" name="edit" :size="13" />
+                </button>
+                <label v-if="keyMetadataAvailable" class="schema-key-check schema-primary-check">
+                  <input
+                    type="checkbox"
+                    :checked="primaryFields.includes(column)"
+                    :disabled="saving"
+                    :aria-label="'Use ' + column + ' in primary key'"
+                    @change="setPrimaryColumn(column, ($event.target as HTMLInputElement).checked)"
+                  />
+                </label>
+                <span v-else class="schema-key-status">{{
+                  table.primaryKeys?.includes(column) ? 'PK' : '-'
+                }}</span>
+                <span class="schema-key-status">{{
+                  table.foreignKeys?.some((key) => key.column === column) ? 'FK' : '-'
+                }}</span>
+              </div>
+            </div>
+            <p v-if="columnsLoading" class="schema-section-note" role="status">
+              Loading column definitions…
+            </p>
+            <div v-if="columnError" class="schema-section-note" role="alert">
+              <p>{{ columnError }}</p>
+              <button type="button" class="text-button" @click="loadColumnDefinitions">
+                Try again
+              </button>
+            </div>
+            <p v-else class="schema-section-note">
+              {{
+                fields.length || pendingKeyMutation
+                  ? 'Apply or discard field and key changes before editing an existing column.'
+                  : 'Select a column to edit its definition, rename it, or delete it.'
+              }}
+            </p>
+            <p v-if="!keyMetadataAvailable" class="schema-section-note">
+              Refresh the explorer to load key details before editing keys.
+            </p>
+          </section>
+          <section class="schema-key-editor" aria-label="Unique key constraints">
+            <div class="schema-section-heading">
+              <h3>
+                Unique keys <span>{{ uniqueKeys.length }}</span>
+              </h3>
+              <button
+                type="button"
+                class="button secondary small"
+                :disabled="saving || !keyMetadataAvailable || uniqueKeys.length >= 32"
+                @click="addUniqueKey"
+              >
+                <AppIcon name="plus" :size="14" />Add key
+              </button>
+            </div>
+            <p class="schema-section-note">Select the columns that must be unique together.</p>
+            <p v-if="!uniqueKeys.length" class="schema-empty">No unique keys defined.</p>
+            <div class="schema-unique-keys">
+              <div v-for="key in uniqueKeys" :key="key.id" class="schema-unique-key">
+                <div class="schema-unique-key-heading">
+                  <span class="schema-unique-key-name" :title="key.name ?? 'New unique key'">{{
+                    key.name ?? 'New unique key'
+                  }}</span>
+                  <button
+                    type="button"
+                    class="icon-button"
+                    :aria-label="'Remove unique key ' + (key.name ?? key.id)"
+                    title="Remove unique key"
+                    :disabled="saving || !keyMetadataAvailable"
+                    @click="uniqueKeys = uniqueKeys.filter((item) => item.id !== key.id)"
+                  >
+                    <AppIcon name="minus" :size="16" />
+                  </button>
+                </div>
+                <div class="schema-unique-key-fields">
+                  <label
+                    v-for="column in keyColumns"
+                    :key="column"
+                    class="schema-key-check"
+                    :title="column"
+                  >
+                    <input
+                      type="checkbox"
+                      :checked="key.columns.includes(column)"
+                      :disabled="saving || !keyMetadataAvailable"
+                      @change="
+                        setUniqueColumn(key, column, ($event.target as HTMLInputElement).checked)
+                      "
+                    />
+                    <span>{{ column }}</span>
+                  </label>
+                </div>
+              </div>
+            </div>
+          </section>
+        </div>
+        <section class="schema-new-fields" aria-label="Fields to add">
+          <div class="schema-section-heading">
+            <h3>
+              {{ table ? 'New columns' : 'Columns' }} <span>{{ fields.length }}</span>
+            </h3>
+            <button
+              type="button"
+              class="button secondary small"
+              :disabled="saving || fields.length >= 50"
+              @click="addField"
+            >
+              <AppIcon name="plus" :size="14" />Add field
+            </button>
+          </div>
+          <p v-if="!fields.length" class="schema-empty">
+            No new columns. Add a field to extend this table.
+          </p>
+          <p
+            v-if="fields.some((field) => field.dataType && !validDataType(field.dataType))"
+            class="schema-field-validation"
+            role="status"
+          >
+            Choose a supported type such as integer, varchar(255), or decimal(10,2).
+          </p>
+          <div v-for="(field, index) in fields" :key="index" class="schema-new-field">
+            <label
+              >Field name<input
+                v-model="field.name"
+                @input="renameField(field)"
+                required
+                :maxlength="options.nameLimit"
+                :disabled="saving"
+                autocomplete="off"
+                spellcheck="false"
+            /></label>
+            <label
+              >Data type<input
+                v-model="field.dataType"
+                required
+                maxlength="128"
+                :disabled="saving"
+                placeholder="varchar(255)"
+                list="schema-field-type-options"
+                autocomplete="off"
+                spellcheck="false"
+            /></label>
+            <div class="schema-new-field-options">
+              <label class="schema-field-check"
+                ><input
+                  v-model="field.nullable"
+                  type="checkbox"
+                  :disabled="saving || field.primaryKey"
+                />Nullable</label
+              >
+              <label v-if="canAddPrimaryKey || table" class="schema-field-check"
+                ><input
+                  v-model="field.primaryKey"
+                  type="checkbox"
+                  :disabled="
+                    saving ||
+                    (table && !keyMetadataAvailable) ||
+                    (!table &&
+                      fields.some((item, itemIndex) => itemIndex !== index && item.primaryKey))
+                  "
+                />Primary key</label
+              >
+              <label v-if="!table" class="schema-field-check"
+                ><input
+                  v-model="field.unique"
+                  type="checkbox"
+                  :disabled="saving || field.primaryKey"
+                />Unique</label
+              >
+            </div>
+            <button
+              type="button"
+              class="icon-button schema-field-remove"
+              :aria-label="'Remove field ' + (index + 1)"
+              title="Remove field"
+              :disabled="saving"
+              @click="removeField(index)"
+            >
+              <AppIcon name="minus" :size="16" />
+            </button>
+          </div>
+          <datalist id="schema-field-type-options">
+            <option v-for="type in typeSuggestions" :key="type" :value="type" />
+          </datalist>
+        </section>
+        <p class="schema-editor-note">
+          Data types follow the connected database dialect. Required fields and primary keys cannot
+          contain NULL values.
+        </p>
+        <p v-if="error" class="schema-field-validation" role="alert">{{ error }}</p>
+      </div>
+      <footer class="schema-editor-footer">
+        <span>Review your changes before applying.</span>
+        <div>
           <button
             type="button"
-            class="icon-button schema-field-remove"
-            :aria-label="`Remove field ${index + 1}`"
-            title="Remove field"
+            class="button secondary small"
             :disabled="saving"
-            @click="removeField(index)"
+            @click="dialog?.close()"
           >
-            <AppIcon name="minus" :size="16" />
+            Cancel
+          </button>
+          <button type="submit" class="button primary small" :disabled="!canSave">
+            {{ saving ? 'Applying...' : table ? 'Apply changes' : 'Create table' }}
           </button>
         </div>
-        <datalist id="schema-field-type-options">
-          <option v-for="type in typeSuggestions" :key="type" :value="type" />
-        </datalist>
-      </section>
-      <p class="muted">
-        Changes apply immediately. Data types use the connected database dialect; required fields
-        and primary keys cannot contain NULL values.
-      </p>
-      <p v-if="error" class="mutation-warning" role="alert">{{ error }}</p>
-      <div class="mutation-actions">
-        <button type="button" class="button secondary" :disabled="saving" @click="dialog?.close()">
-          Cancel
-        </button>
-        <button type="submit" class="button" :disabled="!canSave">
-          {{ saving ? 'Applying…' : table ? 'Apply changes' : 'Create table' }}
-        </button>
-      </div>
+      </footer>
     </form>
   </dialog>
+  <ColumnEditor
+    v-if="editingColumn && table"
+    :provider="provider"
+    :database="database"
+    :table="table"
+    :column="editingColumn"
+    :apply="apply"
+    @close="editingColumn = undefined"
+    @saved="emit('saved')"
+  />
 </template>
