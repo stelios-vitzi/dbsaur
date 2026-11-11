@@ -1,4 +1,5 @@
 use super::{connect, sensitive_setting};
+use crate::adapters::sqlx;
 use crate::{application::*, domain::*};
 use sqlx::{Connection, Row};
 

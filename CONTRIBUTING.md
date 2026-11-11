@@ -6,7 +6,10 @@ Report vulnerabilities privately as described in [SECURITY.md](SECURITY.md).
 
 ## Development
 
-Use Node.js 24 LTS (24.11+) and Rust 1.95+ with rustfmt and Clippy. From the repository root:
+Use Node.js 26 LTS (26.13+) and Rust 1.99.1 with rustfmt and Clippy. The versions
+are recorded in `.nvmrc` and `rust-toolchain.toml`. TypeScript stays on 6.0.3
+because the current Vue type checker does not support TypeScript 7's package exports.
+From the repository root:
 
 ```sh
 npm --prefix frontend ci

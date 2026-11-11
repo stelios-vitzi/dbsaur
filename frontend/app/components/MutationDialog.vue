@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { DatabaseChangeCancelled } from '../utils/databaseChange'
 import { providerOptions, quoteIdentifier } from '../providers'
 import type { ColumnInfo, Mutation, TableInfo } from '../../shared/database'
 const props = defineProps<{
@@ -138,6 +139,10 @@ async function save() {
     await props.apply(mutation)
     emit('saved')
   } catch (cause) {
+    if (cause instanceof DatabaseChangeCancelled) {
+      emit('close')
+      return
+    }
     error.value =
       cause instanceof Error ? cause.message : 'The change failed. Review the values and try again.'
     confirmation.value = ''

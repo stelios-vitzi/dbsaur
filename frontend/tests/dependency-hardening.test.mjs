@@ -4,8 +4,8 @@ import { createRequire } from 'node:module'
 import test from 'node:test'
 
 const require = createRequire(import.meta.url)
-const braces = require('braces')
-const forge = require('node-forge')
+const braces = createRequire(require.resolve('micromatch'))('braces')
+const forge = createRequire(require.resolve('listhen'))('node-forge')
 
 test('braces rejects excessive nesting on all public string entry points', () => {
   const pattern = `${'{'.repeat(101)}x${'}'.repeat(101)}`

@@ -1,4 +1,5 @@
 use super::{connect_mode, metadata, projection, quote_identifier};
+use crate::adapters::sqlx;
 use crate::{application::*, domain::*};
 use sqlx::{Connection, MySqlConnection, Row};
 

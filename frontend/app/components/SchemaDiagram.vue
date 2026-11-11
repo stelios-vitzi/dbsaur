@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { DatabaseChangeCancelled } from '../utils/databaseChange'
 import type { RelationshipChange, TableInfo } from '../../shared/database'
 import { layoutSchemaTables } from '../utils/schemaFlowLayout'
 
@@ -714,6 +715,10 @@ async function applyPendingRelationship() {
     await props.applyRelationship(relationship)
     pendingRelationship.value = null
   } catch (cause) {
+    if (cause instanceof DatabaseChangeCancelled) {
+      cancelPendingRelationship()
+      return
+    }
     relationshipError.value =
       cause instanceof Error ? cause.message : 'Could not apply this relationship.'
   } finally {
@@ -730,6 +735,10 @@ async function applyRelationshipEdit() {
     await props.updateRelationship(current, { ...next })
     cancelPendingRelationship()
   } catch (cause) {
+    if (cause instanceof DatabaseChangeCancelled) {
+      cancelPendingRelationship()
+      return
+    }
     relationshipError.value =
       cause instanceof Error ? cause.message : 'Could not update this relationship.'
   } finally {
@@ -745,6 +754,10 @@ async function removeSelectedRelationship() {
     await props.removeRelationship(relationship)
     cancelPendingRelationship()
   } catch (cause) {
+    if (cause instanceof DatabaseChangeCancelled) {
+      cancelPendingRelationship()
+      return
+    }
     relationshipError.value =
       cause instanceof Error ? cause.message : 'Could not remove this relationship.'
   } finally {

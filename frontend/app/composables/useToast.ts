@@ -3,20 +3,55 @@ export interface ToastMessage {
   id: number
   message: string
   tone: ToastTone
+  confirmation?: boolean
 }
 
+const confirmations = new WeakMap<object, Map<number, (accepted: boolean) => void>>()
+
 export function useToast() {
+  const app = useNuxtApp()
+  const resolvers = confirmations.get(app) ?? new Map<number, (accepted: boolean) => void>()
+  confirmations.set(app, resolvers)
+  const owned = new Set<number>()
   const messages = useState<ToastMessage[]>('action-toasts', () => [])
   const sequence = useState('action-toast-sequence', () => 0)
   function show(message: string, tone: ToastTone = 'success') {
     if (!import.meta.client || !message) return
     const id = ++sequence.value
-    messages.value = [...messages.value.slice(-4), { id, message, tone }]
+    const transient = messages.value.filter((item) => !item.confirmation).slice(-4)
+    messages.value = [
+      ...messages.value.filter((item) => item.confirmation),
+      ...transient,
+      { id, message, tone },
+    ]
+  }
+  function respond(id: number, accepted: boolean) {
+    const resolve = resolvers.get(id)
+    resolvers.delete(id)
+    messages.value = messages.value.filter((message) => message.id !== id)
+    resolve?.(accepted)
   }
   function dismiss(id: number) {
-    messages.value = messages.value.filter((message) => message.id !== id)
+    respond(id, false)
   }
-  return { messages, show, dismiss }
+  async function confirm(message: string) {
+    if (!import.meta.client) return false
+    const id = ++sequence.value
+    owned.add(id)
+    try {
+      return await new Promise<boolean>((resolve) => {
+        resolvers.set(id, resolve)
+        messages.value = [...messages.value, { id, message, tone: 'info', confirmation: true }]
+      })
+    } finally {
+      owned.delete(id)
+    }
+  }
+  function cancelConfirmations() {
+    for (const id of owned) dismiss(id)
+  }
+  onScopeDispose(cancelConfirmations)
+  return { messages, show, dismiss, confirm, respond, cancelConfirmations }
 }
 
 // Clear transient feedback after delivery so identical repeated actions are announced.

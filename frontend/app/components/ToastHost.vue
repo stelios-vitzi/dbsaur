@@ -1,5 +1,5 @@
 <script setup lang="ts">
-const { messages, dismiss } = useToast()
+const { messages, dismiss, respond } = useToast()
 const target = shallowRef<HTMLElement | string>('body')
 const region = useTemplateRef<HTMLElement>('region')
 const timers = new Map<number, ReturnType<typeof setTimeout>>()
@@ -21,6 +21,7 @@ function pause(id: number) {
 function resume(id: number) {
   pause(id)
   paused.delete(id)
+  if (messages.value.find((item) => item.id === id)?.confirmation) return
   timers.set(
     id,
     setTimeout(() => dismiss(id), 6500),
@@ -77,8 +78,19 @@ onBeforeUnmount(() => {
           @focusout="resume(item.id)"
         >
           <AppIcon :name="item.tone === 'success' ? 'check' : 'database'" :size="18" />
-          <span>{{ item.message }}</span>
+          <span>
+            {{ item.message }}
+            <span v-if="item.confirmation" class="toast-actions">
+              <button class="button small" type="button" @click="respond(item.id, true)">
+                Save
+              </button>
+              <button class="button secondary small" type="button" @click="respond(item.id, false)">
+                Cancel
+              </button>
+            </span>
+          </span>
           <button
+            v-if="!item.confirmation"
             class="icon-button"
             type="button"
             aria-label="Close notification"

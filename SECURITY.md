@@ -29,7 +29,7 @@ authorization. Session cookies are not an independent login system.
   writes; they do not replace database privileges. SQL Server has no read-only
   transaction mode. Database functions, triggers, extensions, and remote systems
   may have side effects outside ordinary transaction rollback.
-- Use SELECT-only accounts for browsing. Explicit writes commit immediately and
+- Use SELECT-only accounts for browsing. Explicit writes commit after choosing Save and
   can destroy data; keep tested backups. MySQL/MariaDB DDL implicitly commits.
 - Credentials stay in bounded server memory unless explicitly saved to the
   encrypted vault. Restrict its directory and keep the key separate from backups.
@@ -46,22 +46,28 @@ audits block high/critical findings. RustSec audits cover backend, desktop, and
 xtask lockfiles and block every vulnerability, including unscored ones. Audit
 errors also block publication. No advisory exceptions are configured.
 
-Current live audit results after compatible crypto/TLS lockfile updates:
+Current live audit results after the dependency and vault-driver updates:
 
 | Check | Result |
 | --- | --- |
-| npm | 0 high, 0 critical; 3 low and 11 moderate findings remain visible |
-| backend Cargo lockfile | Blocked by RUSTSEC-2026-0459 in libsqlite3-sys 0.37.0 |
-| desktop Cargo lockfile | Blocked by the same SQLite advisory; informational dependency warnings also reported |
+| npm | 0 high, 0 critical; 6 low and 6 moderate findings remain visible |
+| backend Cargo lockfile | No vulnerabilities |
+| desktop Cargo lockfile | No vulnerabilities; glib unsoundness and proc-macro-error maintenance warnings remain visible |
 | xtask Cargo lockfile | No vulnerabilities |
 
-Release publication remains blocked. The SQLite advisory requires libsqlite3-sys
-0.39.0 or newer, while SQLx 0.9.0 currently requires a version below 0.38.0.
-Resolving that requires a supported upstream dependency upgrade or a separately
-reviewed SQLite integration change; the advisory is not ignored. Compatible
-updates resolve RUSTSEC-2026-0385 (ctutils), RUSTSEC-2026-0382 (rustls-webpki), and
-RUSTSEC-2026-0381 (webpki-roots). Container scans remain a separate daily/PR/push
-workflow and are not claimed as rerun in this desktop release check.
+The earlier RUSTSEC-2026-0459 publication blocker is resolved by using rusqlite
+0.42.0 with bundled libsqlite3-sys 0.40.0 for the encrypted connection vault.
+The schema and AES-256-GCM record format remain compatible with existing vaults;
+database operations run on Tokio's blocking pool. PostgreSQL and MySQL retain
+the matching SQLx 0.9.0 core/driver crates, pinned exactly because those crates
+do not promise independent semver compatibility. This avoids the SQLx umbrella
+crate's incompatible optional SQLite constraint without suppressing advisories.
+The existing crypto/TLS fixes remain in place. Upstream node-forge 1.4.3 replaces
+the previous local Forge patch and passes its security regression tests.
+
+Passing audits alone does not publish a release: all native platform build gates
+must also pass. Container scans remain a separate daily/PR/push workflow and are
+not claimed as rerun in this desktop release check.
 
 ## Dependency review — 17 October 2026
 
@@ -75,14 +81,15 @@ deployment images:
 | `cargo audit --file backend/Cargo.lock` | Passed; 0 findings across 241 crate dependencies; 1,334 RustSec advisories loaded |
 | Trivy 0.76.0 on frontend and backend build and deployment images | Passed; 0 findings at every severity, including unknown severity |
 
-The frontend build tree includes local maintained fixes for two upstream
+At the time of this historical scan, the frontend build tree included local fixes for two upstream
 advisories that did not have fixed releases at scan time:
 
 - [braces](https://github.com/advisories/GHSA-vfj7-8cjw-p6xm) is patched in
   `frontend/vendor/braces` with recursion depth limits and cyclic parent-chain
   detection.
-- [node-forge](https://github.com/advisories/GHSA-86w9-cpqp-85rv) is patched in
-  `frontend/vendor/node-forge` to reject malformed nested DigestInfo structures.
+- [node-forge](https://github.com/advisories/GHSA-86w9-cpqp-85rv) was patched
+  locally to reject malformed nested DigestInfo structures; the local copy has
+  since been replaced by upstream 1.4.3.
 
 Regression tests cover the vulnerable inputs and valid behavior. The files retain
 the upstream licenses and are documented in `frontend/vendor/README.md`.
@@ -104,7 +111,7 @@ audits:
 ```sh
 npm --prefix frontend ci
 npm --prefix frontend audit --offline=false --audit-level=low
-cargo install cargo-audit --locked --version 0.22.2
+cargo install cargo-audit --locked --version 0.23.0
 cargo audit --file backend/Cargo.lock
 ```
 

@@ -219,6 +219,14 @@ async function save() {
   error.value = ''
   notice.value = ''
   try {
+    if (
+      !(await toast.confirm(
+        `Unsaved settings for ${props.database}. Save to apply them, or cancel to discard them.`,
+      ))
+    ) {
+      resetDraft()
+      return
+    }
     await $fetch('/api/database-settings', {
       method: 'PATCH',
       body: {
@@ -377,9 +385,8 @@ onScopeDispose(() => controller.abort())
             <div class="settings-scope">
               <AppIcon name="database" :size="18" />
               <p>
-                Changes are saved only to <strong>{{ database }}</strong
-                >. Database defaults apply when clients open a new connection. Role-specific
-                defaults can override them.
+                Changes are saved only to <strong>{{ database }}</strong>. Database defaults apply
+                when clients open a new connection. Role-specific defaults can override them.
               </p>
             </div>
           </template>

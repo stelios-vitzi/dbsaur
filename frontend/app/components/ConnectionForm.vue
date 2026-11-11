@@ -384,8 +384,7 @@ async function readPem(event: Event, field: 'tlsCa' | 'tlsCert' | 'tlsKey') {
             : form.allDatabases
               ? 'Connect to instance'
               : 'Connect to database'
-        }}</span
-        ><AppIcon name="arrow" />
+        }}</span><AppIcon name="arrow" />
       </button>
     </div>
   </form>

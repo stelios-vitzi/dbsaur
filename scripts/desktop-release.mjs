@@ -49,8 +49,13 @@ export function collect({ platform, version, target = '', root = '.' }) {
     if (!statSync(join(app, 'Contents/MacOS/dbsaur-desktop')).isFile())
       throw new Error('Incomplete macOS app bundle')
     const archive = `DBsaur_${version}_macos-universal.app.tar.gz`
+    // Git Bash's GNU tar interprets a Windows drive letter as a remote host.
+    const tar =
+      process.platform === 'win32'
+        ? join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'tar.exe')
+        : 'tar'
     execFileSync(
-      'tar',
+      tar,
       ['-czf', resolve(output, archive), '-C', resolve(release, 'bundle/macos'), 'DBsaur.app'],
       { stdio: 'inherit' },
     )

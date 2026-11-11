@@ -8,10 +8,10 @@ geometry from a single local application.
 [User guide](docs/user-guide.md) · [Contributing](CONTRIBUTING.md) ·
 [Security](SECURITY.md) · [License](LICENSE)
 
-DBsaur is in early development. Database changes commit immediately and can be
-irreversible; use appropriate database permissions and keep backups. Release
-publication is currently blocked by the SQLite dependency advisory documented in
-the [security policy](SECURITY.md#release-security-gate--11-november-2026).
+DBsaur is in early development. Database changes commit after choosing Save in
+the pending-change notification and can be irreversible; use appropriate database
+permissions and keep backups. Publication requires all desktop builds and dependency
+audits to pass; see the [security policy](SECURITY.md#release-security-gate--11-november-2026).
 
 ## Features
 
@@ -53,7 +53,7 @@ Gatekeeper warnings. Windows and Linux packages are unsigned.
 
 ## Build and run from source
 
-Install Node.js 24 LTS (24.11+) and Rust 1.95+ with rustfmt and Clippy, together
+Install Node.js 26 LTS (26.13+) and Rust 1.99.1 with rustfmt and Clippy, together
 with the [Tauri platform prerequisites](https://v2.tauri.app/start/prerequisites/):
 MSVC C++ build tools and WebView2 on Windows, GTK/WebKit development libraries on
 Linux, or Xcode command-line tools on macOS.
@@ -124,7 +124,7 @@ npm run lint
 npm test
 npm run test:packaging
 npm run test:desktop
-cargo install cargo-audit --locked --version 0.22.2
+cargo install cargo-audit --locked --version 0.23.0
 npm run audit
 ```
 
@@ -146,9 +146,12 @@ See [SECURITY.md](SECURITY.md) for current findings and vulnerability reporting.
 
 ## Releases and versioning
 
-Each successful push to `main` publishes a combined GitHub Release only after the
-release gates pass. Pull requests and manual runs produce downloadable Actions
-artifacts. Packages include license notices and platform-specific SHA-256 manifests.
+The **Desktop build and release** workflow publishes a combined GitHub Release
+after all native builds and dependency audits pass, on pushes to `main` and manual
+runs on `main`. Pull requests and manual runs on other branches only produce
+downloadable Actions artifacts. Its **Release outcome** summary reports blocking
+gates. A successful ordinary **CI** run alone does not publish a release.
+Packages include license notices and platform-specific SHA-256 manifests.
 
 The source version is maintained in the backend and desktop Cargo manifests and
 `src-tauri/tauri.conf.json`. Ask the user to approve a version bump for every change

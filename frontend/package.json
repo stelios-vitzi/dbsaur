@@ -9,33 +9,33 @@
     "postinstall": "nuxt prepare"
   },
   "dependencies": {
-    "@codemirror/autocomplete": "^6.20.3",
+    "@codemirror/autocomplete": "^6.20.4",
     "@codemirror/commands": "^6.11.1",
     "@codemirror/lang-sql": "^6.10.0",
     "@codemirror/language": "^6.13.1",
     "@codemirror/state": "^6.7.6",
-    "@codemirror/view": "^6.43.14",
+    "@codemirror/view": "^6.43.15",
     "@fontsource-variable/ibm-plex-sans": "^5.3.0",
     "@fontsource/ibm-plex-mono": "^5.3.0",
     "@lezer/highlight": "^1.2.5",
-    "@material-symbols/svg-400": "0.48.0",
+    "@material-symbols/svg-400": "0.48.3",
     "fill-range": "7.1.1",
-    "maplibre-gl": "^6.15.0",
-    "nuxt": "4.6.1",
-    "vue": "3.5.44"
+    "maplibre-gl": "^6.17.0",
+    "nuxt": "4.6.4",
+    "vue": "3.5.45"
   },
   "devDependencies": {
-    "@types/node": "^24.19.2",
-    "prettier": "3.9.10",
-    "typescript": "~5.9.3",
-    "vue-tsc": "3.3.13"
+    "@types/node": "^26.6.6",
+    "prettier": "3.10.0",
+    "typescript": "~6.0.3",
+    "vue-tsc": "3.3.14"
   },
   "overrides": {
     "braces": "file:./vendor/braces",
-    "node-forge": "file:./vendor/node-forge"
+    "node-forge": "1.4.3"
   },
   "license": "MIT",
   "engines": {
-    "node": ">=24.11.0 <27"
+    "node": ">=26.13.0 <27"
   }
 }

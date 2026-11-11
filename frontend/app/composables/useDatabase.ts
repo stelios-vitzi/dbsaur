@@ -1,3 +1,4 @@
+import { DatabaseChangeCancelled } from '../utils/databaseChange'
 import type {
   ConnectionInput,
   Provider,
@@ -25,6 +26,7 @@ export function useDatabase() {
   const connecting = ref(false)
   const testing = ref(false)
   const connectionError = ref('')
+  watch([session, switching, connecting], () => toast.cancelConfirmations(), { flush: 'sync' })
   const error = ref('')
   for (const source of [error, connectionError])
     watch(
@@ -385,10 +387,26 @@ export function useDatabase() {
     await loadRows()
   }
   async function applyMutation(mutation: Mutation) {
+    const currentSession = session.value
+    const pending = JSON.parse(JSON.stringify(mutation)) as Mutation
+    const target =
+      'table' in pending
+        ? `${pending.schema}.${pending.table}`
+        : 'name' in pending
+          ? pending.name
+          : currentSession?.database
+    if (
+      !(await toast.confirm(
+        `Unsaved database change${target ? ` to ${target}` : ''}. Save to apply it, or cancel to discard it.`,
+      ))
+    )
+      throw new DatabaseChangeCancelled()
+    if (session.value !== currentSession || switching.value || connecting.value)
+      throw new DatabaseChangeCancelled()
     try {
       return await $fetch<{ affectedRows: number }>('/api/mutations', {
         method: 'POST',
-        body: { confirmation: 'APPLY', mutation },
+        body: { confirmation: 'APPLY', mutation: pending },
       })
     } catch (cause) {
       throw new Error(message(cause, 'save'))

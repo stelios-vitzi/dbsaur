@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { DatabaseChangeCancelled } from '../utils/databaseChange'
 import type { ColumnInfo, Mutation, TableInfo } from '../../shared/database'
 import { isSpatialType } from '../utils/geometry'
 const props = defineProps<{
@@ -95,6 +96,10 @@ async function save() {
     })
     emit('saved')
   } catch (cause) {
+    if (cause instanceof DatabaseChangeCancelled) {
+      emit('close')
+      return
+    }
     error.value = cause instanceof Error ? cause.message : 'Could not save this value. Try again.'
   } finally {
     saving.value = false
@@ -117,8 +122,9 @@ async function save() {
       @keydown.meta.enter.prevent="save"
     >
       <div class="cell-editor-heading">
-        <label for="cell-value">{{ column.name }}</label
-        ><span class="muted">{{ column.dataType }}</span
+        <label for="cell-value">{{ column.name }}</label><span class="muted">{{
+          column.dataType
+        }}</span
         ><button
           v-if="isSpatialType(column.dataType) && typeof original === 'string'"
           type="button"

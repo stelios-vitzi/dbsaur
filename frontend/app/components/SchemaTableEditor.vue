@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { DatabaseChangeCancelled } from '../utils/databaseChange'
 import { providerOptions, quoteIdentifier } from '../providers'
 import type { Mutation, TableInfo } from '../../shared/database'
 
@@ -366,6 +367,10 @@ async function save() {
     }
     emit('saved')
   } catch (cause) {
+    if (cause instanceof DatabaseChangeCancelled) {
+      emit('close')
+      return
+    }
     error.value = cause instanceof Error ? cause.message : 'Could not apply the table changes.'
   } finally {
     saving.value = false

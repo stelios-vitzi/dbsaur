@@ -1,3 +1,4 @@
+use dbsaur::adapters::sqlx;
 use dbsaur::{
     adapters::postgres::{PostgresAdapter, quote_identifier},
     application::DatabaseAdapter,

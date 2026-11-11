@@ -1,5 +1,6 @@
 mod settings;
 mod write;
+use crate::adapters::sqlx;
 use crate::{application::*, domain::*};
 use async_trait::async_trait;
 use sqlx::{

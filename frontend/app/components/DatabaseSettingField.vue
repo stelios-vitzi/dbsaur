@@ -20,8 +20,9 @@ const reason = computed(() => {
 <template>
   <div class="setting-field">
     <div class="setting-field-heading">
-      <label :for="id">{{ label }}</label
-      ><span v-if="setting.unit" class="setting-unit">{{ setting.unit }}</span>
+      <label :for="id">{{ label }}</label><span v-if="setting.unit" class="setting-unit">{{
+        setting.unit
+      }}</span>
     </div>
     <p :id="`${id}-help`">{{ setting.short_desc }}</p>
     <template v-if="setting.editable">

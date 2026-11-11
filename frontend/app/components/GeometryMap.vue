@@ -127,8 +127,7 @@ onScopeDispose(() => {
   >
     <div class="geometry-heading">
       <div>
-        <strong>{{ column }}</strong
-        ><span class="muted"
+        <strong>{{ column }}</strong><span class="muted"
           >Geometry preview<span v-if="srid !== undefined"> · SRID {{ srid }}</span></span
         >
       </div>

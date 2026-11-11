@@ -3020,6 +3020,12 @@ kbd {
   height: 24px;
   padding: 3px;
 }
+.toast-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
 .toast-error {
   border-left-color: var(--danger);
 }

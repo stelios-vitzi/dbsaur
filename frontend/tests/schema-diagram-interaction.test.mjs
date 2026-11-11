@@ -5,6 +5,7 @@ import { compileScript, parse } from '@vue/compiler-sfc'
 import ts from 'typescript'
 import * as vue from 'vue'
 import { layoutSchemaTables } from '../app/utils/schemaFlowLayout.ts'
+import { DatabaseChangeCancelled } from '../app/utils/databaseChange.ts'
 
 // Exercise the component's actual setup and pointer actions without a browser or database.
 const source = readFileSync(new URL('../app/components/SchemaDiagram.vue', import.meta.url), 'utf8')
@@ -57,7 +58,12 @@ function setup(t) {
     window: { setTimeout: () => {} },
   }
   new Function('require', 'module', 'exports', ...Object.keys(runtime), javascript)(
-    (name) => (name === 'vue' ? vue : { layoutSchemaTables }),
+    (name) =>
+      name === 'vue'
+        ? vue
+        : name === '../utils/databaseChange'
+          ? { DatabaseChangeCancelled }
+          : { layoutSchemaTables },
     module,
     module.exports,
     ...Object.values(runtime),

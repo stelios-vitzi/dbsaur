@@ -428,8 +428,7 @@ async function cellSaved() {
             <div>
               <strong>{{
                 session?.allDatabases ? session.host : session?.database || 'No connection'
-              }}</strong
-              ><span>{{
+              }}</strong><span>{{
                 session
                   ? session.provider === 'demo'
                     ? 'Sample workspace'
