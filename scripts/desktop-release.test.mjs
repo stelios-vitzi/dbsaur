@@ -11,11 +11,13 @@ import {
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { execFileSync } from 'node:child_process'
 import {
   collect,
   selectPackage,
   releaseVersion,
+  isVersionBump,
   updateManifest,
   releaseNotes,
   validateSigningConfiguration,
@@ -54,6 +56,68 @@ test('version numbers remain valid for Windows and consistent across platforms',
     assert.throws(() => releaseVersion('0.1.0', value))
 })
 
+test('only actual source version increases trigger releases', () => {
+  for (const [before, after] of [
+    ['0.1.5', '0.1.6'],
+    ['0.1.9', '0.1.10'],
+    ['0.1.5', '0.2.0'],
+    ['0.9.9', '1.0.0'],
+  ]) {
+    assert.equal(isVersionBump(before, after), true)
+    assert.equal(isVersionBump(after, before), false)
+  }
+  assert.equal(isVersionBump('0.1.5', '0.1.5'), false)
+  assert.throws(() => isVersionBump('invalid', '0.1.6'), /source version/)
+  assert.throws(() => isVersionBump('0.1.5', 'invalid'), /source version/)
+})
+
+test('version detection compares the pre-push commit, not only the last commit', () => {
+  const root = mkdtempSync(join(tmpdir(), 'dbsaur-version-'))
+  const script = fileURLToPath(new URL('./desktop-release.mjs', import.meta.url))
+  const git = (...args) => execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim()
+  const config = join(root, 'src-tauri/tauri.conf.json')
+  const output = join(root, 'output')
+  const detect = (before) =>
+    execFileSync(process.execPath, [script, 'detect-version'], {
+      cwd: root,
+      env: { ...process.env, RELEASE_BEFORE: before, GITHUB_OUTPUT: output },
+      stdio: 'pipe',
+    })
+  const commit = (version) => {
+    writeFileSync(config, JSON.stringify({ version }))
+    git('add', 'src-tauri/tauri.conf.json')
+    git('-c', 'user.name=Test', '-c', 'user.email=test@example.com', 'commit', '-qm', 'fixture')
+  }
+  try {
+    git('init', '-q')
+    mkdirSync(join(root, 'src-tauri'))
+    commit('0.1.5')
+    const before = git('rev-parse', 'HEAD')
+    detect(before)
+    assert.equal(readFileSync(output, 'utf8'), 'bumped=false\n')
+    commit('0.1.6')
+    git(
+      '-c',
+      'user.name=Test',
+      '-c',
+      'user.email=test@example.com',
+      'commit',
+      '--allow-empty',
+      '-qm',
+      'follow-up',
+    )
+    detect(before)
+    assert.ok(readFileSync(output, 'utf8').endsWith('bumped=true\n'))
+    detect('0'.repeat(40))
+    assert.ok(readFileSync(output, 'utf8').endsWith('bumped=false\n'))
+    assert.throws(() => detect('invalid'))
+    assert.throws(() => detect('f'.repeat(40)))
+  } finally {
+    assert.equal(join(root, '..'), tmpdir())
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
 test('updater manifest requires all signed platforms and maps both macOS architectures', () => {
   const directory = mkdtempSync(join(tmpdir(), 'dbsaur-updater-'))
   const options = { directory, version: '0.1.42', repository: 'owner/repo', tag: 'main-42-1' }
@@ -78,9 +142,17 @@ test('updater manifest requires all signed platforms and maps both macOS archite
     )
     assert.equal(manifest.platforms['windows-x86_64'].signature, 'signed')
     writeFileSync(join(directory, 'DBsaur universal.dmg'), 'disk image')
+    writeFileSync(join(directory, 'DBsaur.deb'), 'debian package')
+    writeFileSync(join(directory, 'DBsaur.rpm'), 'rpm package')
     const notes = releaseNotes(options)
-    assert.equal((notes.match(/\[Download\]/g) || []).length, 3)
-    for (const name of ['DBsaur-setup.exe', 'DBsaur.AppImage', 'DBsaur%20universal.dmg'])
+    assert.equal((notes.match(/\[Download\]/g) || []).length, 5)
+    for (const name of [
+      'DBsaur-setup.exe',
+      'DBsaur.AppImage',
+      'DBsaur.deb',
+      'DBsaur.rpm',
+      'DBsaur%20universal.dmg',
+    ])
       assert.ok(notes.includes(`https://github.com/owner/repo/releases/download/main-42-1/${name}`))
     assert.ok(notes.includes('automatic updates'))
     rmSync(join(directory, 'DBsaur universal.dmg'))
@@ -113,14 +185,16 @@ for (const platform of ['windows-x64', 'linux-x64', 'macos-universal']) {
         platform === 'windows-x64'
           ? [['nsis', 'DBsaur_0.1.42_x64-setup.exe']]
           : platform === 'linux-x64'
-            ? [['appimage', 'DBsaur_0.1.42_amd64.AppImage']]
+            ? [
+                ['appimage', 'DBsaur_0.1.42_amd64.AppImage'],
+                ['deb', 'DBsaur_0.1.42_amd64.deb'],
+                ['rpm', 'DBsaur-0.1.42-1.x86_64.rpm'],
+              ]
             : [['dmg', 'DBsaur_0.1.42_universal.dmg']]
       for (const [directory, name] of fixtures) file(join(release, 'bundle', directory, name))
       if (platform === 'windows-x64') file(join(release, 'dbsaur-desktop.exe'))
       // Old build outputs must not become extra release downloads.
       file(join(release, 'bundle/msi/DBsaur.msi'))
-      file(join(release, 'bundle/deb/DBsaur.deb'))
-      file(join(release, 'bundle/rpm/DBsaur.rpm'))
       if (platform === 'macos-universal') {
         const executable = join(release, 'bundle/macos/DBsaur.app/Contents/MacOS/dbsaur-desktop')
         file(executable)

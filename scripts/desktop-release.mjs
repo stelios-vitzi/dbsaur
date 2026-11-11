@@ -39,6 +39,8 @@ export function collect({ platform, version, target = '', root = '.', signed = f
     bundle('nsis', '-setup.exe')
   } else if (platform === 'linux-x64') {
     bundle('appimage', '.AppImage')
+    bundle('deb', '.deb')
+    bundle('rpm', '.rpm')
   } else {
     bundle('dmg', '.dmg')
     const app = join(release, 'bundle/macos/DBsaur.app')
@@ -100,6 +102,19 @@ export function releaseVersion(base, runNumber) {
   return `${major}.${minor}.${Number(runNumber)}`
 }
 
+export function isVersionBump(previous, current) {
+  const parse = (version) => {
+    if (!/^\d+\.\d+\.\d+$/.test(version)) throw new Error('Invalid source version')
+    return version.split('.').map(BigInt)
+  }
+  const before = parse(previous)
+  const after = parse(current)
+  for (let index = 0; index < before.length; index++) {
+    if (after[index] !== before[index]) return after[index] > before[index]
+  }
+  return false
+}
+
 export function validateSigningConfiguration(env) {
   if (env.RELEASE_SIGNED !== 'true') return
   const missing = ['TAURI_UPDATER_PUBLIC_KEY', 'TAURI_SIGNING_PRIVATE_KEY'].filter(
@@ -140,7 +155,9 @@ export function releaseNotes({ directory, repository, tag, version }) {
   updateManifest({ directory, repository, tag, version })
   const downloads = [
     ['Windows x64', '-setup.exe', 'Run the setup installer.'],
-    ['Linux x64', '.AppImage', 'Make the AppImage executable, then run it.'],
+    ['Linux x64 (Debian/Ubuntu)', '.deb', 'Install with `sudo apt install ./<filename>.deb`.'],
+    ['Linux x64 (Fedora/RPM)', '.rpm', 'Install with `sudo dnf install ./<filename>.rpm`.'],
+    ['Linux x64 (portable)', '.AppImage', 'Make the AppImage executable, then run it.'],
     ['macOS (Intel and Apple Silicon)', '.dmg', 'Open the DMG and drag DBsaur into Applications.'],
   ].map(([platform, extension, instructions]) => {
     const name = basename(selectPackage(directory, extension))
@@ -164,7 +181,21 @@ export function releaseNotes({ directory, repository, tag, version }) {
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === resolve(import.meta.filename)) {
-  if (process.argv[2] === 'preflight') {
+  if (process.argv[2] === 'detect-version') {
+    const before = process.env.RELEASE_BEFORE || ''
+    if (!/^[a-f0-9]{40}$/.test(before)) throw new Error('Invalid previous push commit')
+    // A newly created branch has no previous version to compare; do not publish it.
+    let bumped = false
+    if (!/^0+$/.test(before)) {
+      const previous = JSON.parse(
+        execFileSync('git', ['show', `${before}:src-tauri/tauri.conf.json`], { encoding: 'utf8' }),
+      )
+      const current = JSON.parse(readFileSync('src-tauri/tauri.conf.json', 'utf8'))
+      bumped = isVersionBump(previous.version, current.version)
+    }
+    if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, `bumped=${bumped}\n`)
+    console.log(`Source version increased: ${bumped}`)
+  } else if (process.argv[2] === 'preflight') {
     validateSigningConfiguration(process.env)
     console.log('Release signing configuration check passed.')
   } else if (process.argv[2] === 'version') {
@@ -205,6 +236,8 @@ if (process.argv[1] && resolve(process.argv[1]) === resolve(import.meta.filename
     mkdirSync('.artifacts', { recursive: true })
     writeFileSync('.artifacts/release-notes.md', releaseNotes(options))
   } else {
-    throw new Error('Usage: node scripts/desktop-release.mjs preflight|version|collect|manifest')
+    throw new Error(
+      'Usage: node scripts/desktop-release.mjs detect-version|preflight|version|collect|manifest',
+    )
   }
 }

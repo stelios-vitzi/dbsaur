@@ -43,10 +43,12 @@ need Node.js, Rust, or a separate server. Database servers remain external.
 | Platform                       | Release packages | Installation                                           |
 | ------------------------------ | ---------------- | ------------------------------------------------------ |
 | Windows x64                    | Setup `.exe`     | Choose current user (no elevation) or all users (UAC). |
-| Linux x64                      | `.AppImage`      | Make the AppImage executable and run it.               |
+| Linux x64 (Debian/Ubuntu)       | `.deb`           | Install with `sudo apt install ./<filename>.deb`.      |
+| Linux x64 (Fedora/RPM)          | `.rpm`           | Install with `sudo dnf install ./<filename>.rpm`.      |
+| Linux x64 (portable)            | `.AppImage`      | Make the AppImage executable and run it.               |
 | macOS, Intel and Apple Silicon | Universal `.dmg` | Drag `DBsaur.app` into Applications.                   |
 
-Each release starts with three direct download links. Other assets are for
+Each release starts with five direct download links. Other assets are for
 automatic updates, checksums, and license notices; no ZIP extraction is needed.
 
 Linux release builds use Ubuntu 22.04 as their compatibility baseline and require
@@ -143,15 +145,18 @@ See [SECURITY.md](SECURITY.md) for current findings and vulnerability reporting.
 ## Releases and versioning
 
 The **Desktop build and release** workflow publishes a combined GitHub Release
-after all native builds and dependency audits pass, on pushes to `main` and manual
-runs on `main`. Pull requests and manual runs on other branches only produce
-downloadable Actions artifacts. Its **Release outcome** summary reports blocking
+after all native builds and dependency audits pass, only when a push to `main`
+increases the source version in `src-tauri/tauri.conf.json`. Changes to that file
+without a version increase skip native builds and publication. The workflow does
+not run on pull requests or manual dispatch; ordinary CI and security audits keep
+their existing triggers. Its **Release outcome** summary reports blocking
 gates. A successful ordinary **CI** run alone does not publish a release.
 Packages include license notices and platform-specific SHA-256 manifests.
 
 CI caches Rust dependencies and installed build tools per platform. The first
 build after a cache miss remains slow; later builds reuse compiled dependencies.
 macOS universal releases still compile for both Apple Silicon and Intel.
+The Linux job produces DEB, RPM, and AppImage packages in the same build.
 
 Signed desktop releases check for updates at launch and offer **Install and
 restart** in the app. See [desktop updates](docs/desktop-updates.md) for supported

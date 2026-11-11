@@ -3,8 +3,8 @@ name: Desktop build and release
 on:
   push:
     branches: [main]
-  pull_request:
-  workflow_dispatch:
+    paths:
+      - src-tauri/tauri.conf.json
 
 permissions:
   contents: read
@@ -14,8 +14,30 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  version-change:
+    name: Detect source version bump
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      bumped: ${{ steps.detect.outputs.bumped }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+      - name: Compare source versions across the push
+        id: detect
+        env:
+          RELEASE_BEFORE: ${{ github.event.before }}
+        run: node scripts/desktop-release.mjs detect-version
+
   preflight:
     name: Validate release signing setup
+    needs: version-change
+    if: needs.version-change.outputs.bumped == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -44,7 +66,7 @@ jobs:
             target: ''
           - platform: linux-x64
             runner: ubuntu-22.04
-            bundles: appimage
+            bundles: deb,rpm,appimage
             target: ''
           - platform: macos-universal
             runner: macos-15
@@ -136,6 +158,8 @@ jobs:
 
   audit-npm:
     name: Block high/critical npm vulnerabilities
+    needs: version-change
+    if: needs.version-change.outputs.bumped == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -149,6 +173,8 @@ jobs:
 
   audit-rust:
     name: Block Rust vulnerabilities (${{ matrix.lockfile }})
+    needs: version-change
+    if: needs.version-change.outputs.bumped == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     strategy:
@@ -177,7 +203,7 @@ jobs:
 
   release:
     needs: [preflight, build, audit-npm, audit-rust]
-    if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -207,7 +233,7 @@ jobs:
 
   summary:
     name: Release outcome
-    needs: [preflight, build, audit-npm, audit-rust, release]
+    needs: [version-change, preflight, build, audit-npm, audit-rust, release]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -219,8 +245,13 @@ jobs:
           NPM_RESULT: ${{ needs.audit-npm.result }}
           RUST_RESULT: ${{ needs.audit-rust.result }}
           RELEASE_RESULT: ${{ needs.release.result }}
-          PUBLISH_EXPECTED: ${{ (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main' }}
+          VERSION_RESULT: ${{ needs.version-change.result }}
+          PUBLISH_EXPECTED: ${{ needs.version-change.outputs.bumped == 'true' }}
         run: |
+          if [[ "$VERSION_RESULT" != success ]]; then
+            echo 'Version detection failed; no release was published.' >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
           {
             echo '## Desktop release outcome'
             echo "Signing setup: $PREFLIGHT_RESULT"
@@ -235,7 +266,7 @@ jobs:
             elif [[ "$PUBLISH_EXPECTED" == true ]]; then
               echo 'No release was published. Review the failed or cancelled gates above.'
             else
-              echo 'Publication is only enabled for main pushes and manual runs on main.'
+              echo 'No source version increase: native builds and publication were skipped.'
             fi
           } >> "$GITHUB_STEP_SUMMARY"
           if [[ "$PUBLISH_EXPECTED" == true && "$RELEASE_RESULT" != success ]]; then

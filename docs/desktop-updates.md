@@ -9,16 +9,20 @@ you check again or reopen the app. Offline checks leave the workspace usable.
 Windows NSIS installations, macOS app bundles, and Linux AppImages support this
 flow. Windows setup asks whether to install for the current user (without
 elevation) or all users (with administrator permission). Updates preserve that
-scope; all-users updates and uninstalling require elevation. Local builds and PR
-artifacts have updates disabled unless configured with a signing key.
+scope; all-users updates and uninstalling require elevation. Local builds
+have updates disabled unless configured with a signing key.
 
-Releases provide one primary download per OS: Windows setup `.exe`, Linux
-`.AppImage`, and a universal macOS `.dmg`. The macOS `.app.tar.gz`, signatures,
+Releases provide Windows setup `.exe`, Linux `.deb`, `.rpm`, and portable
+`.AppImage` packages, and a universal macOS `.dmg`. The macOS `.app.tar.gz`, signatures,
 and `latest.json` remain release assets for the updater; users should use the
-three direct download links at the top of the release notes for manual installs.
+five direct download links at the top of the release notes for manual installs.
 SHA-256 manifests and license notices are also retained.
 
-MSI, standalone Windows executables, DEB, and RPM are no longer published.
+DEB and RPM installations should be updated manually by installing the newer
+package with APT or DNF. The Linux updater manifest continues to target AppImage;
+automatic updates of DEB/RPM installations are not configured or verified.
+
+MSI and standalone Windows executables are no longer published.
 Before switching from an existing MSI installation, uninstall it and install the
 NSIS setup executable manually. Remove existing DEB/RPM installations with their
 package manager before switching to AppImage. This format migration has not been
@@ -80,6 +84,10 @@ Linux x64, and both architectures of the universal macOS app. The app reads
 Only newer versions are offered; draft releases are not offered. Manually
 published releases need the same complete manifest and correctly signed assets.
 The existing build matrix and all dependency audit gates still block publication.
+Native builds and publication run only when a push to `main` increases the source
+version in `src-tauri/tauri.conf.json`, compared with the version before that push.
+Other edits to that file skip builds; pull requests and manual dispatch do not
+trigger the desktop release workflow. CI and security workflow triggers are unchanged.
 Installer versions remain `<source-major>.<source-minor>.<run-number>`.
 
 Install the first release containing this updater manually. Older DBsaur
