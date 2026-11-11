@@ -1327,18 +1327,11 @@ kbd {
   gap: 20px;
 }
 
-.brand-attribution {
+.footer-credit,
+.footer-attribution {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  color: var(--muted);
-  font-size: var(--text-body);
-  text-decoration: none;
-}
-
-.brand-attribution strong {
-  color: var(--text);
-  font-weight: 600;
 }
 
 .attribution-logo {

@@ -7,12 +7,17 @@
     "dev:backend": "cargo run --manifest-path backend/Cargo.toml",
     "build": "cargo build --manifest-path backend/Cargo.toml --locked --release && npm --prefix frontend run build",
     "typecheck": "npm --prefix frontend run typecheck",
-    "lint": "cargo fmt --manifest-path backend/Cargo.toml --check && cargo clippy --manifest-path backend/Cargo.toml --locked --all-targets -- -D warnings && node frontend/node_modules/prettier/bin/prettier.cjs --check frontend/app frontend/shared frontend/server frontend/nuxt.config.ts scripts/dev.mjs",
-    "format": "cargo fmt --manifest-path backend/Cargo.toml && node frontend/node_modules/prettier/bin/prettier.cjs --write frontend/app frontend/shared frontend/server frontend/nuxt.config.ts scripts/dev.mjs",
+    "lint": "cargo fmt --manifest-path backend/Cargo.toml --check && cargo clippy --manifest-path backend/Cargo.toml --locked --all-targets -- -D warnings && node frontend/node_modules/prettier/bin/prettier.cjs --check frontend/app frontend/shared frontend/server frontend/nuxt.config.ts scripts/dev.mjs scripts/desktop-release.mjs scripts/desktop-release.test.mjs",
+    "format": "cargo fmt --manifest-path backend/Cargo.toml && node frontend/node_modules/prettier/bin/prettier.cjs --write frontend/app frontend/shared frontend/server frontend/nuxt.config.ts scripts/dev.mjs scripts/desktop-release.mjs scripts/desktop-release.test.mjs",
     "test:smoke": "node scripts/smoke.mjs",
     "test:write-smoke": "node scripts/write-smoke.mjs",
     "test": "cargo test --manifest-path backend/Cargo.toml --locked && node --test frontend/tests/*.test.mjs",
-    "audit": "npm --prefix frontend audit --offline=false --audit-level=low && cargo audit --file backend/Cargo.lock"
+    "audit": "npm --prefix frontend audit --offline=false --audit-level=low && cargo audit --file backend/Cargo.lock",
+    "dev:desktop": "cargo xtask dev",
+    "build:desktop": "cargo xtask build",
+    "test:desktop": "cargo test --manifest-path src-tauri/Cargo.toml --locked --target-dir dist",
+    "install:desktop": "cargo xtask install",
+    "test:packaging": "cargo test --manifest-path xtask/Cargo.toml --locked && node --test scripts/desktop-release.test.mjs"
   },
   "license": "MIT",
   "engines": {

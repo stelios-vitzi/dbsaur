@@ -78,7 +78,96 @@ The full-width query workspace sits above the table section. Use **+** to open i
 
 Use **Save** to name a query, **Saved** to open it in its own tab, and **Update** to change its name or SQL. Opening an already open saved query switches to its tab and preserves any draft edits. The saved list lets you remove queries. Saved queries persist only in this browser's local storage (up to 100); loading never executes them. Connection credentials and result rows are not stored with them. Avoid putting secrets in saved SQL. The sample workspace supports `SELECT * FROM public.customers` (also `orders` and `products`) with an optional `LIMIT`; connect PostgreSQL for full SQL support.
 
-## Run locally
+## Desktop app and installers
+
+DBsaur can run as a native Tauri desktop application. The installer includes the
+static Nuxt interface and Rust API in one application; end users do not need Node,
+Rust, Docker, or a separately running web server. Database servers remain external.
+
+Build prerequisites: Node.js 24.11+, Rust 1.95+, the platform's
+[Tauri prerequisites](https://v2.tauri.app/start/prerequisites/), and the Tauri CLI
+(`cargo install tauri-cli --locked --version '^2'`). On Windows, install the MSVC
+C++ build tools and WebView2. The Windows installer bootstraps WebView2 if needed.
+
+```sh
+npm --prefix frontend ci
+cargo xtask dev
+cargo xtask build
+```
+
+`dev` generates a static interface and opens the native window; rerun after UI
+changes. `build` generates that interface and creates native installers under
+`dist/release/bundle/` (NSIS/MSI on Windows, deb/rpm/AppImage on Linux,
+app/DMG on macOS). The Windows standalone executable is
+`dist/release/dbsaur-desktop.exe`; Cargo intermediate output also stays in `dist/`.
+Debug builds use `dist/debug/`; explicit targets use `dist/<target>/release/`.
+Build on the target OS.
+Use `cargo xtask build --bundles nsis` for just the Windows setup executable, or
+`cargo xtask build --no-bundle` for an executable without an installer.
+`cargo xtask frontend` generates assets alone; `cargo xtask check` checks Rust
+after generation. Extra dev/build arguments pass through to the Tauri CLI.
+
+### Install locally
+
+```sh
+cargo xtask install             # build and install the package for your OS
+cargo xtask install --no-build  # install the newest existing package in dist/
+cargo xtask install --dry-run   # inspect the existing installer and destination only
+```
+
+On Windows, installation requests UAC elevation and waits for setup to finish. Only
+setup runs as administrator; builds and the application run normally. Cancelling
+UAC or a failed installer returns an error. The NSIS installer is configured for
+all users and creates normal uninstall entries. Application data remains per user.
+`npm run install:desktop` is an alias. `--dry-run` requires an existing release
+installer and makes no changes. Close a running DBsaur before upgrading.
+
+On Linux, `install` builds a `.deb` and uses `sudo apt-get install` on APT-based
+distributions, or builds an `.rpm` and uses `sudo dnf install` on DNF-based
+distributions. The package manager installs runtime dependencies and desktop
+launcher entries. Other distributions can use `cargo xtask build --bundles appimage`;
+make the AppImage executable and run it directly. Linux builds need the
+[Tauri system libraries](https://v2.tauri.app/start/prerequisites/#linux), including
+WebKitGTK 4.1. Release packages use Ubuntu 22.04 as the Linux build baseline.
+
+On macOS, install Xcode command-line tools. `install` builds `DBsaur.app` and copies
+it to `/Applications/DBsaur.app` using `sudo ditto`. `--no-build` and `--dry-run`
+work on all platforms. To build/install a universal Mac app, install both Rust
+targets (`rustup target add aarch64-apple-darwin x86_64-apple-darwin`) and run
+`cargo xtask install --universal`. Its output is under
+`dist/universal-apple-darwin/release/bundle/`. DMGs can also be installed by dragging
+DBsaur into Applications. Mac builds use an ad-hoc signature; distribution without
+Gatekeeper warnings requires an Apple Developer certificate and notarization.
+See [Tauri signing](https://v2.tauri.app/distribute/sign/macos/).
+
+### Automated desktop releases
+
+`.github/workflows/desktop-release.yml` validates and builds Windows x64 NSIS/MSI
+installers and a standalone executable, Linux x64 deb/rpm/AppImage packages, and
+universal macOS DMG and app archives for Apple Silicon and Intel. Each platform
+adds license notices and a separately named SHA-256 manifest. All platform jobs
+must succeed before the combined GitHub Release is published. Pull
+requests and manual workflow runs build downloadable Actions artifacts; each
+successful push to `main` also publishes a GitHub Release. Releases use unique
+`main-<run-number>-<attempt>` tags at the pushed commit, with installer version
+`<major>.<minor>.<run-number>` derived from `tauri.conf.json`. No manual version
+bump or personal token is needed. Only the publishing job gets `contents: write`;
+the release is published after its assets upload successfully. The workflow must
+be committed and pushed before it can run. Windows/Linux packages are unsigned;
+macOS uses an ad-hoc signature unless Developer ID signing is configured.
+Run `npm run test:packaging` for package-selection and release-collection tests.
+
+The desktop API runs inside the app on loopback port 34618, with a per-launch
+private cookie and same-origin mutation checks. Closing the app stops the API.
+If that port is occupied, startup fails instead of connecting to another process.
+The stable origin preserves saved SQL and preferences. Saved connections use the
+existing encrypted SQLite vault in the OS per-user application data directory
+(`com.dbsaur.desktop`), with a generated local `vault.key`. Keep that key private
+and back it up together with `connections.sqlite`; deleting it makes saved
+credentials unrecoverable. This protects stored ciphertext, not a compromised OS
+account. Desktop startup does not read the web deployment's vault variables.
+
+## Run locally (web development)
 
 The gear beside the selected database opens tabbed PostgreSQL settings: General, Performance, Queries, Locale, Advanced, and Server. Database owners and administrators can edit the connection limit and permitted database defaults, including memory, timeouts, transaction behavior, and locale. Enable **Override for this database** to set a value; disable it to remove the database override. **Save changes** applies the batch in a transaction. Unsaved drafts survive tab changes, and closing asks whether to discard them. Database defaults affect new connections; role defaults can take precedence. Server-wide, immutable, sensitive, and permission-restricted parameters explain their restrictions instead of offering an unsupported save. No server configuration files are changed.
 

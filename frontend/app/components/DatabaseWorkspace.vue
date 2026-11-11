@@ -400,19 +400,6 @@ async function cellSaved() {
             >saur</span
           ></a
         >
-        <a class="brand-attribution" href="https://vijitek.com">
-          <span>By</span>
-          <span class="attribution-logo" aria-hidden="true">
-            <img
-              src="~/assets/images/vijitek-logo.webp"
-              alt=""
-              width="1280"
-              height="1280"
-              decoding="async"
-            />
-          </span>
-          <strong>Vijitek</strong>
-        </a>
       </div>
       <div v-if="session" class="header-actions">
         <button class="button secondary small" @click="connectionDialog?.showModal()">

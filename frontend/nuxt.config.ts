@@ -1,4 +1,10 @@
+import process from 'node:process'
+
+const desktop = process.env.DBSAUR_DESKTOP === '1'
+
 export default defineNuxtConfig({
+  ssr: !desktop,
+  ...(desktop ? { nitro: { prerender: { crawlLinks: false, routes: ['/'] } } } : {}),
   compatibilityDate: '2026-10-16',
   devtools: { enabled: false },
   telemetry: false,

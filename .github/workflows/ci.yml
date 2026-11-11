@@ -39,7 +39,7 @@ jobs:
       - name: Sample API smoke test
         shell: bash
         run: |
-          backend/target/release/webdb &
+          backend/target/release/dbsaur &
           backend_pid=$!
           NITRO_HOST=127.0.0.1 NITRO_PORT=34616 node frontend/.output/server/index.mjs &
           frontend_pid=$!

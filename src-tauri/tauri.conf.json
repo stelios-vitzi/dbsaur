@@ -1,0 +1,47 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "DBsaur",
+  "version": "0.1.0",
+  "identifier": "com.dbsaur.desktop",
+  "build": {
+    "beforeDevCommand": "cargo xtask frontend",
+    "beforeBuildCommand": "cargo xtask frontend",
+    "frontendDist": "../frontend/.output/public"
+  },
+  "app": {
+    "windows": [],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "shortDescription": "A local database workspace",
+    "category": "DeveloperTool",
+    "windows": {
+      "nsis": {
+        "installMode": "perMachine"
+      }
+    },
+    "macOS": {
+      "minimumSystemVersion": "11.0",
+      "signingIdentity": "-"
+    },
+    "linux": {
+      "rpm": {
+        "depends": [
+          "gtk3",
+          "webkit2gtk4.1"
+        ]
+      }
+    }
+  }
+}

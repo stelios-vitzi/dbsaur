@@ -43,7 +43,21 @@ onMounted(() => {
 
 <template>
   <footer class="app-footer">
-    <span>DBsaur by <a href="https://vijitek.com">Vijitek</a></span>
+    <span class="footer-credit"
+      >DBsaur by
+      <a class="footer-attribution" href="https://vijitek.com">
+        <span class="attribution-logo" aria-hidden="true">
+          <img
+            src="~/assets/images/vijitek-logo.webp"
+            alt=""
+            width="1280"
+            height="1280"
+            decoding="async"
+          />
+        </span>
+        <span>Vijitek</span>
+      </a>
+    </span>
     <nav aria-label="Legal and privacy">
       <NuxtLink to="/privacy">Privacy policy</NuxtLink>
       <NuxtLink to="/terms">Terms of use</NuxtLink>

@@ -1,0 +1,25 @@
+[package]
+name = "dbsaur-desktop"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.95"
+license = "MIT"
+publish = false
+
+[workspace]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+dbsaur = { path = "../backend" }
+axum = "0.8.9"
+tokio = { version = "1", features = ["net", "sync"] }
+uuid = { version = "1", features = ["v4"] }
+
+[features]
+custom-protocol = ["tauri/custom-protocol"]
+
+[dev-dependencies]
+tower = { version = "0.5", features = ["util"] }

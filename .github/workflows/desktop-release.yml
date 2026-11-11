@@ -1,0 +1,127 @@
+name: Desktop build and release
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: desktop-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: windows-x64
+            runner: windows-2022
+            bundles: nsis,msi
+            target: ''
+          - platform: linux-x64
+            runner: ubuntu-22.04
+            bundles: deb,rpm,appimage
+            target: ''
+          - platform: macos-universal
+            runner: macos-15
+            bundles: app,dmg
+            target: universal-apple-darwin
+    name: Build ${{ matrix.platform }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 90
+    defaults:
+      run:
+        shell: bash
+    env:
+      NUXT_TELEMETRY_DISABLED: '1'
+      CARGO_INCREMENTAL: '0'
+      CARGO_TARGET_DIR: ${{ github.workspace }}/dist
+      RELEASE_PLATFORM: ${{ matrix.platform }}
+      RELEASE_TARGET: ${{ matrix.target }}
+      RELEASE_BUNDLES: ${{ matrix.bundles }}
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install Linux build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev librsvg2-dev libayatana-appindicator3-dev patchelf libfuse2
+      - name: Set up Rust
+        run: |
+          rustup toolchain install 1.95.0 --profile minimal --component clippy,rustfmt
+          rustup default 1.95.0
+      - name: Install both macOS targets
+        if: runner.os == 'macOS'
+        run: rustup target add aarch64-apple-darwin x86_64-apple-darwin
+      - run: cargo install tauri-cli --locked --version 2.12.4
+      - run: npm --prefix frontend ci
+      - run: cargo fmt --manifest-path xtask/Cargo.toml --check
+      - run: cargo fmt --manifest-path src-tauri/Cargo.toml --check
+      - run: cargo test --manifest-path xtask/Cargo.toml --locked
+      - run: node --test scripts/desktop-release.test.mjs
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm test
+      - name: Select installer version
+        id: version
+        run: node scripts/desktop-release.mjs version
+      - name: Build native packages
+        env:
+          APPIMAGE_EXTRACT_AND_RUN: '1'
+          NO_STRIP: 'true'
+        run: |
+          args=(--ci --bundles "$RELEASE_BUNDLES" --config .artifacts/desktop-release.json)
+          if [[ -n "$RELEASE_TARGET" ]]; then args+=(--target "$RELEASE_TARGET"); fi
+          cargo xtask build "${args[@]}" -- --locked
+      - run: cargo test --manifest-path src-tauri/Cargo.toml --locked
+      - run: cargo clippy --manifest-path src-tauri/Cargo.toml --locked --all-targets -- -D warnings
+      - name: Collect release assets and checksums
+        env:
+          RELEASE_VERSION: ${{ steps.version.outputs.version }}
+        run: node scripts/desktop-release.mjs collect
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: dbsaur-${{ matrix.platform }}
+          path: dist/artifacts/*
+          if-no-files-found: error
+          retention-days: 14
+
+  release:
+    needs: build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: dbsaur-*
+          merge-multiple: true
+          path: dist
+      - name: Publish GitHub Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          set -euo pipefail
+          tag="main-${GITHUB_RUN_NUMBER}-${GITHUB_RUN_ATTEMPT}"
+          gh release create "$tag" dist/* --target "$GITHUB_SHA" \
+            --title "DBsaur ${RELEASE_VERSION}" --generate-notes --draft
+          gh release edit "$tag" --draft=false --latest

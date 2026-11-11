@@ -28,3 +28,12 @@ backend/target-validation/
 Thumbs.db
 .idea/
 .vscode/
+
+# Nuxt static desktop output
+frontend/dist/
+
+# Desktop Cargo build output and installers
+/dist/
+
+# Generated Tauri capability schemas
+/src-tauri/gen/
