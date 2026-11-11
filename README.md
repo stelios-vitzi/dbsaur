@@ -40,11 +40,14 @@ Published packages are available from [GitHub Releases](https://github.com/steli
 The desktop application includes the interface and Rust API; end users do not
 need Node.js, Rust, or a separate server. Database servers remain external.
 
-| Platform                       | Release packages                       | Installation                                                                  |
-| ------------------------------ | -------------------------------------- | ----------------------------------------------------------------------------- |
-| Windows x64                    | NSIS setup, MSI, standalone executable | Run setup; installation into Program Files requests UAC elevation.            |
-| Linux x64                      | Debian, RPM, AppImage                  | Install the package with APT/DNF, or make the AppImage executable and run it. |
-| macOS, Intel and Apple Silicon | Universal DMG and app archive          | Drag `DBsaur.app` into Applications.                                          |
+| Platform                       | Release packages | Installation                                                       |
+| ------------------------------ | ---------------- | ------------------------------------------------------------------ |
+| Windows x64                    | Setup `.exe`     | Run setup; installation into Program Files requests UAC elevation. |
+| Linux x64                      | `.AppImage`      | Make the AppImage executable and run it.                           |
+| macOS, Intel and Apple Silicon | Universal `.dmg` | Drag `DBsaur.app` into Applications.                               |
+
+Each release starts with three direct download links. Other assets are for
+automatic updates, checksums, and license notices; no ZIP extraction is needed.
 
 Linux release builds use Ubuntu 22.04 as their compatibility baseline and require
 WebKitGTK 4.1. macOS builds target macOS 11 or newer and use an ad-hoc signature;

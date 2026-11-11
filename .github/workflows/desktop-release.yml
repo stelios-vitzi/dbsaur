@@ -40,11 +40,11 @@ jobs:
         include:
           - platform: windows-x64
             runner: windows-2022
-            bundles: nsis,msi
+            bundles: nsis
             target: ''
           - platform: linux-x64
             runner: ubuntu-22.04
-            bundles: deb,rpm,appimage
+            bundles: appimage
             target: ''
           - platform: macos-universal
             runner: macos-15
@@ -202,7 +202,7 @@ jobs:
           tag="main-${GITHUB_RUN_NUMBER}-${GITHUB_RUN_ATTEMPT}"
           RELEASE_TAG="$tag" node scripts/desktop-release.mjs manifest
           gh release create "$tag" dist/* --target "$GITHUB_SHA" \
-            --title "DBsaur ${RELEASE_VERSION}" --generate-notes --draft
+            --title "DBsaur ${RELEASE_VERSION}" --notes-file .artifacts/release-notes.md --generate-notes --draft
           gh release edit "$tag" --draft=false --latest
 
   summary:

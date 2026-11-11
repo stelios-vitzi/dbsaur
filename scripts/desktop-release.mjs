@@ -37,11 +37,7 @@ export function collect({ platform, version, target = '', root = '.', signed = f
     copy(selectPackage(join(release, 'bundle', directory), extension))
   if (platform === 'windows-x64') {
     bundle('nsis', '-setup.exe')
-    bundle('msi', '.msi')
-    copy(join(release, 'dbsaur-desktop.exe'), `DBsaur_${version}_windows-x64.exe`)
   } else if (platform === 'linux-x64') {
-    bundle('deb', '.deb')
-    bundle('rpm', '.rpm')
     bundle('appimage', '.AppImage')
   } else {
     bundle('dmg', '.dmg')
@@ -80,10 +76,6 @@ export function collect({ platform, version, target = '', root = '.', signed = f
     copy(`${source}.sig`, `${artifact}.sig`)
     if (!readFileSync(join(output, `${artifact}.sig`), 'utf8').trim())
       throw new Error('Updater signature must not be empty')
-    if (platform === 'windows-x64') {
-      const msi = selectPackage(join(release, 'bundle/msi'), '.msi')
-      copy(`${msi}.sig`)
-    }
   }
   copy(join(root, 'LICENSE'), 'LICENSE.txt')
   copy(join(root, 'THIRD_PARTY_NOTICES.md'))
@@ -128,7 +120,6 @@ export function updateManifest({ directory, version, repository, tag }) {
   const platforms = {}
   for (const [extension, targets] of [
     ['-setup.exe', ['windows-x86_64', 'windows-x86_64-nsis']],
-    ['.msi', ['windows-x86_64-msi']],
     ['.AppImage', ['linux-x86_64']],
     ['.app.tar.gz', ['darwin-x86_64', 'darwin-aarch64']],
   ]) {
@@ -142,6 +133,34 @@ export function updateManifest({ directory, version, repository, tag }) {
       }
   }
   return { version, platforms }
+}
+
+export function releaseNotes({ directory, repository, tag, version }) {
+  // Validate the release location and signed updater assets before linking downloads.
+  updateManifest({ directory, repository, tag, version })
+  const downloads = [
+    ['Windows x64', '-setup.exe', 'Run the setup installer.'],
+    ['Linux x64', '.AppImage', 'Make the AppImage executable, then run it.'],
+    ['macOS (Intel and Apple Silicon)', '.dmg', 'Open the DMG and drag DBsaur into Applications.'],
+  ].map(([platform, extension, instructions]) => {
+    const name = basename(selectPackage(directory, extension))
+    const url = `https://github.com/${repository}/releases/download/${tag}/${encodeURIComponent(name)}`
+    return `| ${platform} | [Download](${url}) | ${instructions} |`
+  })
+  return [
+    '## Downloads',
+    '',
+    'Choose the download for your operating system:',
+    '',
+    '| Platform | Download | Installation |',
+    '| --- | --- | --- |',
+    ...downloads,
+    '',
+    'The remaining assets support automatic updates (`latest.json`, `.sig`, and the macOS `.app.tar.gz`), download verification (`SHA256SUMS-*.txt`), and license notices. You do not need to download them manually.',
+    '',
+    'If you previously installed the Windows MSI, uninstall that installation before switching to the setup installer. Existing DEB/RPM installations should also be removed with their package manager before switching to AppImage.',
+    '',
+  ].join('\n')
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === resolve(import.meta.filename)) {
@@ -176,19 +195,15 @@ if (process.argv[1] && resolve(process.argv[1]) === resolve(import.meta.filename
       signed: process.env.RELEASE_SIGNED === 'true',
     })
   } else if (process.argv[2] === 'manifest') {
-    writeFileSync(
-      'dist/latest.json',
-      JSON.stringify(
-        updateManifest({
-          directory: 'dist',
-          version: process.env.RELEASE_VERSION,
-          repository: process.env.GITHUB_REPOSITORY,
-          tag: process.env.RELEASE_TAG,
-        }),
-        null,
-        2,
-      ) + '\n',
-    )
+    const options = {
+      directory: 'dist',
+      version: process.env.RELEASE_VERSION,
+      repository: process.env.GITHUB_REPOSITORY,
+      tag: process.env.RELEASE_TAG,
+    }
+    writeFileSync('dist/latest.json', JSON.stringify(updateManifest(options), null, 2) + '\n')
+    mkdirSync('.artifacts', { recursive: true })
+    writeFileSync('.artifacts/release-notes.md', releaseNotes(options))
   } else {
     throw new Error('Usage: node scripts/desktop-release.mjs preflight|version|collect|manifest')
   }

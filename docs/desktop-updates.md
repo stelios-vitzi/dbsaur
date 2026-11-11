@@ -6,10 +6,23 @@ download progress, retry after failure, and **Install and restart**. Installatio
 requires confirmation; save your work first. **Later** postpones the update until
 you check again or reopen the app. Offline checks leave the workspace usable.
 
-Windows NSIS/MSI installations, macOS app bundles, and Linux AppImages support this
+Windows NSIS installations, macOS app bundles, and Linux AppImages support this
 flow. Windows may request administrator permission because DBsaur installs per
-machine. DEB/RPM users should update through their package manager. Local builds
+machine. Local builds
 and PR artifacts have updates disabled unless configured with a signing key.
+
+Releases provide one primary download per OS: Windows setup `.exe`, Linux
+`.AppImage`, and a universal macOS `.dmg`. The macOS `.app.tar.gz`, signatures,
+and `latest.json` remain release assets for the updater; users should use the
+three direct download links at the top of the release notes for manual installs.
+SHA-256 manifests and license notices are also retained.
+
+MSI, standalone Windows executables, DEB, and RPM are no longer published.
+Before switching from an existing MSI installation, uninstall it and install the
+NSIS setup executable manually. Remove existing DEB/RPM installations with their
+package manager before switching to AppImage. This format migration has not been
+verified as an automatic update path. Local builds can still explicitly request
+alternative formats with `cargo xtask build --bundles <format>`.
 
 ## Maintainer setup
 

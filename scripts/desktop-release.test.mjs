@@ -17,6 +17,7 @@ import {
   selectPackage,
   releaseVersion,
   updateManifest,
+  releaseNotes,
   validateSigningConfiguration,
 } from './desktop-release.mjs'
 
@@ -57,7 +58,7 @@ test('updater manifest requires all signed platforms and maps both macOS archite
   const directory = mkdtempSync(join(tmpdir(), 'dbsaur-updater-'))
   const options = { directory, version: '0.1.42', repository: 'owner/repo', tag: 'main-42-1' }
   try {
-    for (const name of ['DBsaur-setup.exe', 'DBsaur.msi', 'DBsaur.AppImage', 'DBsaur.app.tar.gz']) {
+    for (const name of ['DBsaur-setup.exe', 'DBsaur.AppImage', 'DBsaur.app.tar.gz']) {
       writeFileSync(join(directory, name), 'package')
       writeFileSync(join(directory, `${name}.sig`), 'signed\n')
     }
@@ -68,7 +69,6 @@ test('updater manifest requires all signed platforms and maps both macOS archite
       'darwin-x86_64',
       'linux-x86_64',
       'windows-x86_64',
-      'windows-x86_64-msi',
       'windows-x86_64-nsis',
     ])
     assert.deepEqual(manifest.platforms['darwin-aarch64'], manifest.platforms['darwin-x86_64'])
@@ -77,6 +77,14 @@ test('updater manifest requires all signed platforms and maps both macOS archite
       'https://github.com/owner/repo/releases/download/main-42-1/DBsaur-setup.exe',
     )
     assert.equal(manifest.platforms['windows-x86_64'].signature, 'signed')
+    writeFileSync(join(directory, 'DBsaur universal.dmg'), 'disk image')
+    const notes = releaseNotes(options)
+    assert.equal((notes.match(/\[Download\]/g) || []).length, 3)
+    for (const name of ['DBsaur-setup.exe', 'DBsaur.AppImage', 'DBsaur%20universal.dmg'])
+      assert.ok(notes.includes(`https://github.com/owner/repo/releases/download/main-42-1/${name}`))
+    assert.ok(notes.includes('automatic updates'))
+    rmSync(join(directory, 'DBsaur universal.dmg'))
+    assert.throws(() => releaseNotes(options), /Expected one .dmg/)
     writeFileSync(join(directory, 'DBsaur.AppImage.sig'), '')
     assert.throws(() => updateManifest(options), /signature/)
     rmSync(join(directory, 'DBsaur.AppImage.sig'))
@@ -103,19 +111,16 @@ for (const platform of ['windows-x64', 'linux-x64', 'macos-universal']) {
       file(join(root, 'THIRD_PARTY_NOTICES.md'))
       const fixtures =
         platform === 'windows-x64'
-          ? [
-              ['nsis', 'DBsaur_0.1.42_x64-setup.exe'],
-              ['msi', 'DBsaur_0.1.42_x64_en-US.msi'],
-            ]
+          ? [['nsis', 'DBsaur_0.1.42_x64-setup.exe']]
           : platform === 'linux-x64'
-            ? [
-                ['deb', 'DBsaur_0.1.42_amd64.deb'],
-                ['rpm', 'DBsaur-0.1.42-1.x86_64.rpm'],
-                ['appimage', 'DBsaur_0.1.42_amd64.AppImage'],
-              ]
+            ? [['appimage', 'DBsaur_0.1.42_amd64.AppImage']]
             : [['dmg', 'DBsaur_0.1.42_universal.dmg']]
       for (const [directory, name] of fixtures) file(join(release, 'bundle', directory, name))
       if (platform === 'windows-x64') file(join(release, 'dbsaur-desktop.exe'))
+      // Old build outputs must not become extra release downloads.
+      file(join(release, 'bundle/msi/DBsaur.msi'))
+      file(join(release, 'bundle/deb/DBsaur.deb'))
+      file(join(release, 'bundle/rpm/DBsaur.rpm'))
       if (platform === 'macos-universal') {
         const executable = join(release, 'bundle/macos/DBsaur.app/Contents/MacOS/dbsaur-desktop')
         file(executable)
@@ -131,14 +136,15 @@ for (const platform of ['windows-x64', 'linux-x64', 'macos-universal']) {
         platform === 'windows-x64'
           ? fixtures[0][1]
           : platform === 'linux-x64'
-            ? fixtures[2][1]
+            ? fixtures[0][1]
             : 'DBsaur.app.tar.gz'
       const updater = join(release, 'bundle', updateDirectory, updateName)
       if (platform === 'macos-universal') file(updater, 'signed archive must remain byte-identical')
       file(`${updater}.sig`, 'signature')
-      if (platform === 'windows-x64')
-        file(join(release, 'bundle/msi', `${fixtures[1][1]}.sig`), 'signature')
       const assets = collect({ platform, version: '0.1.42', target, root })
+      const packages = fixtures.map(([, name]) => name)
+      if (platform === 'macos-universal') packages.push('DBsaur_0.1.42_macos-universal.app.tar.gz')
+      assert.deepEqual(assets.sort(), [...packages, 'LICENSE.txt', 'THIRD_PARTY_NOTICES.md'].sort())
       const manifest = readFileSync(
         join(root, 'dist/artifacts', `SHA256SUMS-${platform}.txt`),
         'utf8',
@@ -161,7 +167,10 @@ for (const platform of ['windows-x64', 'linux-x64', 'macos-universal']) {
         assert.ok(lstatSync(join(extracted, 'DBsaur.app/Contents/MacOS/launcher')).isSymbolicLink())
       }
       const signedAssets = collect({ platform, version: '0.1.42', target, root, signed: true })
-      assert.ok(signedAssets.some((name) => name.endsWith('.sig')))
+      assert.deepEqual(
+        signedAssets.sort(),
+        [...assets, `${platform === 'macos-universal' ? packages[1] : packages[0]}.sig`].sort(),
+      )
       if (platform === 'macos-universal')
         assert.equal(
           readFileSync(
@@ -181,13 +190,17 @@ for (const platform of ['windows-x64', 'linux-x64', 'macos-universal']) {
           release,
           'bundle',
           fixtures[0][0],
-          `duplicate${platform === 'windows-x64' ? '-setup.exe' : platform === 'linux-x64' ? '.deb' : '.dmg'}`,
+          `duplicate${platform === 'windows-x64' ? '-setup.exe' : platform === 'linux-x64' ? '.AppImage' : '.dmg'}`,
         ),
       )
       assert.throws(() =>
         selectPackage(
           join(release, 'bundle', fixtures[0][0]),
-          platform === 'windows-x64' ? '-setup.exe' : platform === 'linux-x64' ? '.deb' : '.dmg',
+          platform === 'windows-x64'
+            ? '-setup.exe'
+            : platform === 'linux-x64'
+              ? '.AppImage'
+              : '.dmg',
         ),
       )
     } finally {
