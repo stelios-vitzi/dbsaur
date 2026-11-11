@@ -22,6 +22,12 @@ key in the application. Keep the key stable and backed up; see
 check for updates. GitHub receives the client's IP address during update checks
 and downloads; database contents and credentials are not included.
 
+Tauri updater signatures are separate from OS code signing. Windows executables
+and installers currently have no Authenticode signature and can trigger
+SmartScreen warnings. macOS packages use ad-hoc signing without Developer ID
+notarization and can trigger Gatekeeper warnings. See
+[operating-system trust](docs/desktop-updates.md#operating-system-trust).
+
 Online audits were rerun after adding the updater: npm still reports 6 low and
 6 moderate findings, with no high/critical findings. All three Cargo lockfiles
 have no vulnerability findings; the desktop glib and proc-macro-error warnings

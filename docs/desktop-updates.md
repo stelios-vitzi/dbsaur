@@ -7,9 +7,10 @@ requires confirmation; save your work first. **Later** postpones the update unti
 you check again or reopen the app. Offline checks leave the workspace usable.
 
 Windows NSIS installations, macOS app bundles, and Linux AppImages support this
-flow. Windows may request administrator permission because DBsaur installs per
-machine. Local builds
-and PR artifacts have updates disabled unless configured with a signing key.
+flow. Windows setup asks whether to install for the current user (without
+elevation) or all users (with administrator permission). Updates preserve that
+scope; all-users updates and uninstalling require elevation. Local builds and PR
+artifacts have updates disabled unless configured with a signing key.
 
 Releases provide one primary download per OS: Windows setup `.exe`, Linux
 `.AppImage`, and a universal macOS `.dmg`. The macOS `.app.tar.gz`, signatures,
@@ -25,6 +26,27 @@ verified as an automatic update path. Local builds can still explicitly request
 alternative formats with `cargo xtask build --bundles <format>`.
 
 ## Maintainer setup
+
+### Operating-system trust
+
+Updater signatures verify updates inside DBsaur; they do not establish a verified
+Windows publisher or satisfy macOS Gatekeeper. Windows releases currently have
+no Authenticode certificate, and macOS builds use ad-hoc signing.
+
+For direct Windows downloads, sign the application and installer with a trusted
+code-signing identity and timestamp the signatures. SmartScreen can still warn
+on new signed files while reputation builds; EV certificates no longer grant an
+automatic bypass. Microsoft documents Store distribution as a way to avoid these
+warnings. There is no installer flag that guarantees suppression. See
+[Microsoft's SmartScreen guidance](https://learn.microsoft.com/en-us/windows/apps/package-and-deploy/smartscreen-reputation).
+macOS distribution without Gatekeeper warnings requires Developer ID signing and
+Apple notarization. These OS signing services are not configured by the updater
+key settings below.
+
+See the [Windows installer notes](../src-tauri/windows/README.md) for the scope
+implementation, icon generation, and manual installer verification.
+
+### Updater signing
 
 Generate a persistent signing key with the Tauri CLI, outside this repository:
 

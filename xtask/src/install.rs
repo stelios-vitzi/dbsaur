@@ -170,39 +170,14 @@ pub fn install(root: &Path, args: &[String]) -> Result {
 }
 
 fn install_windows(installer: &Path, dry_run: bool) -> Result {
-    let program_files = std::env::var_os("ProgramW6432")
-        .or_else(|| std::env::var_os("ProgramFiles"))
-        .ok_or("Windows Program Files directory is unavailable")?;
-    let destination = PathBuf::from(program_files).join("DBsaur");
-    println!("Destination: {}", destination.display());
     if dry_run {
-        println!("Dry run: would request UAC elevation and run setup silently; no changes made.");
+        println!(
+            "Dry run: would open setup to choose current user (no elevation) or all users (UAC)."
+        );
         return Ok(());
     }
-    // Only the installer is elevated. Paths are passed as environment data, never PowerShell code.
-    // NSIS requires /D to be last and unquoted, even when the directory contains spaces.
-    let script = r#"$ErrorActionPreference = 'Stop'
-try {
-    $arguments = '/S /D=' + $env:DBSAUR_INSTALL_DIR
-    $process = Start-Process -FilePath $env:DBSAUR_INSTALLER_PATH -ArgumentList $arguments -Verb RunAs -WindowStyle Hidden -Wait -PassThru
-    exit $process.ExitCode
-} catch {
-    Write-Error $_
-    exit 1
-}"#;
-    crate::run(
-        std::process::Command::new("powershell.exe")
-            .args(["-NoProfile", "-NonInteractive", "-Command", script])
-            .env("DBSAUR_INSTALLER_PATH", installer)
-            .env("DBSAUR_INSTALL_DIR", &destination),
-    )?;
-    if !destination.join("dbsaur-desktop.exe").is_file() {
-        return Err(
-            "Setup exited without creating the expected executable in Program Files.".into(),
-        );
-    }
-    println!("Installed DBsaur in {}", destination.display());
-    Ok(())
+    // Setup owns the scope choice and elevates only for an all-users installation.
+    crate::run(&mut Command::new(installer))
 }
 
 #[cfg(test)]

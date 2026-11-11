@@ -40,11 +40,11 @@ Published packages are available from [GitHub Releases](https://github.com/steli
 The desktop application includes the interface and Rust API; end users do not
 need Node.js, Rust, or a separate server. Database servers remain external.
 
-| Platform                       | Release packages | Installation                                                       |
-| ------------------------------ | ---------------- | ------------------------------------------------------------------ |
-| Windows x64                    | Setup `.exe`     | Run setup; installation into Program Files requests UAC elevation. |
-| Linux x64                      | `.AppImage`      | Make the AppImage executable and run it.                           |
-| macOS, Intel and Apple Silicon | Universal `.dmg` | Drag `DBsaur.app` into Applications.                               |
+| Platform                       | Release packages | Installation                                           |
+| ------------------------------ | ---------------- | ------------------------------------------------------ |
+| Windows x64                    | Setup `.exe`     | Choose current user (no elevation) or all users (UAC). |
+| Linux x64                      | `.AppImage`      | Make the AppImage executable and run it.               |
+| macOS, Intel and Apple Silicon | Universal `.dmg` | Drag `DBsaur.app` into Applications.                   |
 
 Each release starts with three direct download links. Other assets are for
 automatic updates, checksums, and license notices; no ZIP extraction is needed.
@@ -73,16 +73,16 @@ cargo xtask dev
 `dev` generates the desktop interface and opens a native window. Rerun it after
 frontend changes; this mode does not use a live frontend development server.
 
-| Command                          | Purpose                                                                        |
-| -------------------------------- | ------------------------------------------------------------------------------ |
-| `cargo xtask build`              | Build native packages for the current OS.                                      |
-| `cargo xtask install`            | Build and install using UAC on Windows or sudo on Linux/macOS.                 |
-| `cargo xtask install --no-build` | Install the newest existing native package.                                    |
-| `cargo xtask install --dry-run`  | Show the existing package and installation destination without making changes. |
-| `cargo xtask frontend`           | Generate static desktop interface assets.                                      |
-| `cargo xtask check`              | Check desktop Rust code after generating frontend assets.                      |
+| Command                          | Purpose                                                                     |
+| -------------------------------- | --------------------------------------------------------------------------- |
+| `cargo xtask build`              | Build native packages for the current OS.                                   |
+| `cargo xtask install`            | Build and open Windows setup, or install with sudo on Linux/macOS.          |
+| `cargo xtask install --no-build` | Install the newest existing native package.                                 |
+| `cargo xtask install --dry-run`  | Show the existing package and installation behavior without making changes. |
+| `cargo xtask frontend`           | Generate static desktop interface assets.                                   |
+| `cargo xtask check`              | Check desktop Rust code after generating frontend assets.                   |
 
-`install` uses Program Files on Windows, APT or DNF on supported Linux
+`install` opens the scope chooser on Windows, uses APT or DNF on supported Linux
 distributions, and `/Applications/DBsaur.app` on macOS. Close a running DBsaur
 before upgrading. The dry run requires an existing release package.
 
