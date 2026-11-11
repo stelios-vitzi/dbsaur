@@ -14,7 +14,26 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  preflight:
+    name: Validate release signing setup
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+      - name: Check signing configuration before starting native builds
+        env:
+          RELEASE_SIGNED: ${{ github.ref == 'refs/heads/main' && github.event_name != 'pull_request' }}
+          TAURI_UPDATER_PUBLIC_KEY: ${{ vars.TAURI_UPDATER_PUBLIC_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        run: node scripts/desktop-release.mjs preflight
+
   build:
+    needs: preflight
     strategy:
       fail-fast: false
       matrix:
@@ -58,9 +77,10 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
       - name: Install Linux build dependencies
         if: runner.os == 'Linux'
+        timeout-minutes: 10
         run: |
-          sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev librsvg2-dev libayatana-appindicator3-dev patchelf libfuse2
+          sudo apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 update
+          sudo apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev librsvg2-dev libayatana-appindicator3-dev patchelf libfuse2
       - name: Set up Rust
         run: |
           rustup toolchain install 1.99.1 --profile minimal --component clippy,rustfmt
@@ -73,6 +93,7 @@ jobs:
         with:
           key: desktop-${{ matrix.platform }}-tauri-2.12.4
           workspaces: src-tauri -> ../dist
+          cache-on-failure: 'true'
           save-if: ${{ github.ref == 'refs/heads/main' && github.event_name != 'pull_request' }}
       - name: Install Tauri CLI on cache miss
         run: |
@@ -157,7 +178,7 @@ jobs:
       - run: cargo audit --file "${{ matrix.lockfile }}"
 
   release:
-    needs: [build, audit-npm, audit-rust]
+    needs: [preflight, build, audit-npm, audit-rust]
     if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -188,13 +209,14 @@ jobs:
 
   summary:
     name: Release outcome
-    needs: [build, audit-npm, audit-rust, release]
+    needs: [preflight, build, audit-npm, audit-rust, release]
     if: always()
     runs-on: ubuntu-latest
     steps:
       - name: Report publication and blocking gates
         shell: bash
         env:
+          PREFLIGHT_RESULT: ${{ needs.preflight.result }}
           BUILD_RESULT: ${{ needs.build.result }}
           NPM_RESULT: ${{ needs.audit-npm.result }}
           RUST_RESULT: ${{ needs.audit-rust.result }}
@@ -203,12 +225,15 @@ jobs:
         run: |
           {
             echo '## Desktop release outcome'
+            echo "Signing setup: $PREFLIGHT_RESULT"
             echo "Native builds: $BUILD_RESULT"
             echo "npm audit: $NPM_RESULT"
             echo "RustSec audits (all three lockfiles): $RUST_RESULT"
             echo "Publication: $RELEASE_RESULT"
             if [[ "$RELEASE_RESULT" == success ]]; then
               echo "[Published releases](https://github.com/$GITHUB_REPOSITORY/releases)"
+            elif [[ "$PUBLISH_EXPECTED" == true && "$PREFLIGHT_RESULT" != success ]]; then
+              echo 'No release was published: signing setup did not pass. See Validate release signing setup and docs/desktop-updates.md.'
             elif [[ "$PUBLISH_EXPECTED" == true ]]; then
               echo 'No release was published. Review the failed or cancelled gates above.'
             else

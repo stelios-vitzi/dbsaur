@@ -29,6 +29,15 @@ Never commit the private key or paste it into issues or logs. Keep the public ke
 stable: changing it prevents existing installations from trusting new updates.
 The workflow embeds the public key in release builds and signs native updater
 artifacts. Main release builds fail when signing configuration is missing.
+The **Validate release signing setup** job checks both key settings before any
+native build starts. A setup failure blocks publication and names the missing
+settings without printing key contents. It does not verify that the keys match;
+Tauri signing and update verification still check their validity.
+
+Repository settings are under **Settings → Secrets and variables → Actions**:
+use the **Variables** tab for the public key and **Secrets** for the private key
+and optional password. Do not put the public key only in Secrets: the workflow
+reads `vars.TAURI_UPDATER_PUBLIC_KEY`.
 
 The release job combines signed assets into `latest.json`, with Windows x64,
 Linux x64, and both architectures of the universal macOS app. The app reads

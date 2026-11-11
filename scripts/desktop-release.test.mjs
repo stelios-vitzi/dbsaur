@@ -12,7 +12,40 @@ import {
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { execFileSync } from 'node:child_process'
-import { collect, selectPackage, releaseVersion, updateManifest } from './desktop-release.mjs'
+import {
+  collect,
+  selectPackage,
+  releaseVersion,
+  updateManifest,
+  validateSigningConfiguration,
+} from './desktop-release.mjs'
+
+test('release preflight requires both signing keys without exposing their contents', () => {
+  assert.doesNotThrow(() => validateSigningConfiguration({ RELEASE_SIGNED: 'false' }))
+  assert.throws(
+    () => validateSigningConfiguration({ RELEASE_SIGNED: 'true' }),
+    /TAURI_UPDATER_PUBLIC_KEY, TAURI_SIGNING_PRIVATE_KEY/,
+  )
+  const configured = {
+    RELEASE_SIGNED: 'true',
+    TAURI_UPDATER_PUBLIC_KEY: 'public',
+    TAURI_SIGNING_PRIVATE_KEY: 'private-do-not-print',
+  }
+  assert.doesNotThrow(() => validateSigningConfiguration(configured))
+  assert.doesNotThrow(() =>
+    validateSigningConfiguration({ ...configured, TAURI_SIGNING_PRIVATE_KEY_PASSWORD: '' }),
+  )
+  for (const missing of ['TAURI_UPDATER_PUBLIC_KEY', 'TAURI_SIGNING_PRIVATE_KEY']) {
+    assert.throws(
+      () => validateSigningConfiguration({ ...configured, [missing]: '  ' }),
+      (error) => {
+        assert.ok(error.message.includes(missing))
+        assert.ok(!error.message.includes('private-do-not-print'))
+        return true
+      },
+    )
+  }
+})
 
 test('version numbers remain valid for Windows and consistent across platforms', () => {
   assert.equal(releaseVersion('0.1.0', '42'), '0.1.42')

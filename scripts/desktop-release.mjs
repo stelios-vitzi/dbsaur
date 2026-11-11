@@ -108,6 +108,19 @@ export function releaseVersion(base, runNumber) {
   return `${major}.${minor}.${Number(runNumber)}`
 }
 
+export function validateSigningConfiguration(env) {
+  if (env.RELEASE_SIGNED !== 'true') return
+  const missing = ['TAURI_UPDATER_PUBLIC_KEY', 'TAURI_SIGNING_PRIVATE_KEY'].filter(
+    (name) => !env[name]?.trim(),
+  )
+  if (missing.length)
+    throw new Error(
+      `Missing GitHub Actions signing configuration: ${missing.join(', ')}. ` +
+        'Set the public key as a repository variable and the private key as a repository secret. ' +
+        'See docs/desktop-updates.md. No release can be published until signing is configured.',
+    )
+}
+
 export function updateManifest({ directory, version, repository, tag }) {
   if (!/^\d+\.\d+\.\d+$/.test(version)) throw new Error('Invalid updater version')
   if (!/^[\w-]+\/[\w-][\w.-]*$/.test(repository) || !/^[\w-][\w.-]*$/.test(tag))
@@ -132,7 +145,10 @@ export function updateManifest({ directory, version, repository, tag }) {
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === resolve(import.meta.filename)) {
-  if (process.argv[2] === 'version') {
+  if (process.argv[2] === 'preflight') {
+    validateSigningConfiguration(process.env)
+    console.log('Release signing configuration check passed.')
+  } else if (process.argv[2] === 'version') {
     const config = JSON.parse(readFileSync('src-tauri/tauri.conf.json', 'utf8'))
     const version = releaseVersion(config.version, process.env.GITHUB_RUN_NUMBER || '')
     mkdirSync('.artifacts', { recursive: true })
@@ -174,6 +190,6 @@ if (process.argv[1] && resolve(process.argv[1]) === resolve(import.meta.filename
       ) + '\n',
     )
   } else {
-    throw new Error('Usage: node scripts/desktop-release.mjs version|collect|manifest')
+    throw new Error('Usage: node scripts/desktop-release.mjs preflight|version|collect|manifest')
   }
 }
