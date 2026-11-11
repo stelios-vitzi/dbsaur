@@ -25,6 +25,9 @@ files when working in a subdirectory that has one.
 
 - Frontend: Nuxt 4, Vue Composition API, strict TypeScript, and `app/` conventions.
 - Backend: Rust, Axum, and SQLx. Do not add .NET projects.
+- Distribution is desktop-only. Do not restore standalone web hosting, Docker,
+  a Nuxt server proxy, or a separately launched API. The frontend is static
+  content bundled into Tauri; the API is embedded in the native process.
 - Desktop: Tauri. Keep desktop builds and installation commands in xtask, with
   generated native output under the repository-root `dist/` directory.
 - HTTP routes depend on application/domain contracts; database adapters implement
@@ -68,7 +71,7 @@ files when working in a subdirectory that has one.
 ## Documentation and communication
 
 - Keep README.md concise and oriented around installation, development, testing,
-  and releases. Put detailed provider and deployment instructions in `docs/`.
+  and releases. Put detailed provider and desktop-operation instructions in `docs/`.
 - Update SECURITY.md when relevant audit results or security limitations change;
   distinguish current findings from historical scans.
 - Keep progress updates and handoffs concise. Report changed files, verification

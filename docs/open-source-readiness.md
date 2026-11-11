@@ -1,5 +1,9 @@
 # Open-source readiness review — 17 October 2026
 
+This is a historical review. DBsaur became desktop-only in version 0.1.3; web
+server and container deployment instructions below no longer apply. Use the
+[README](../README.md) for the supported desktop workflow.
+
 ## Scope and conclusion
 
 Reviewed the tracked repository, architecture, provider contracts, connection and

@@ -31,14 +31,13 @@ remain visible. Native build and signed update verification are separate gates.
 
 Security fixes target the latest default-branch code. No older release branch has
 a promised support window. DBsaur is early-development software for a trusted,
-single-user workstation, with no built-in multi-user authentication or per-user
-authorization. Session cookies are not an independent login system.
+single-user workstation. The bundled interface and Rust API run within the
+Tauri application. There is no standalone server or multi-user deployment mode.
 
-- Keep both the frontend and API on loopback or a trusted isolated network.
-  Remote use requires authentication at the entrypoint, HTTPS, network controls,
-  and `WEBDB_SECURE_COOKIES=true`. Never expose the backend directly to the public.
-- The API intentionally connects to user-selected hosts. It is not an SSRF-safe
-  public proxy. All locally saved connections belong to the same installation.
+- The embedded API listens only on `127.0.0.1:34618` and requires a private
+  desktop session token. Keep it private; remote/shared hosting is unsupported.
+- The application intentionally connects to user-selected database hosts.
+  All locally saved connections belong to the same OS user installation.
 - TLS is disabled by default. Enable verified TLS on untrusted networks.
 - Query parsing and read-only transactions where supported reduce accidental
   writes; they do not replace database privileges. SQL Server has no read-only
@@ -46,10 +45,10 @@ authorization. Session cookies are not an independent login system.
   may have side effects outside ordinary transaction rollback.
 - Use SELECT-only accounts for browsing. Explicit writes commit after choosing Save and
   can destroy data; keep tested backups. MySQL/MariaDB DDL implicitly commits.
-- Credentials stay in bounded server memory unless explicitly saved to the
+- Credentials stay in bounded local process memory unless explicitly saved to the
   encrypted vault. Restrict its directory and keep the key separate from backups.
-  Saved SQL, exports, clipboard contents, browser extensions, OS memory/dumps,
-  database logs, and reverse-proxy logs need their own protection.
+  Saved SQL, exports, clipboard contents, webview caches, OS memory/dumps,
+  and database logs need their own protection.
 - Pagination limits rows, not bytes. Large values and expensive queries can still
   consume memory and database resources. This is not a hostile multi-tenant service.
 
@@ -81,8 +80,10 @@ The existing crypto/TLS fixes remain in place. Upstream node-forge 1.4.3 replace
 the previous local Forge patch and passes its security regression tests.
 
 Passing audits alone does not publish a release: all native platform build gates
-must also pass. Container scans remain a separate daily/PR/push workflow and are
-not claimed as rerun in this desktop release check.
+must also pass. Version 0.1.3 removes standalone web hosting, container images,
+and container CI jobs. The daily/PR/push npm and RustSec audits remain enabled
+and still audit all three Cargo lockfiles. Historical container scan results
+below describe the retired deployment and are not current desktop scan results.
 
 ## Dependency review — 17 October 2026
 
@@ -109,29 +110,18 @@ advisories that did not have fixed releases at scan time:
 Regression tests cover the vulnerable inputs and valid behavior. The files retain
 the upstream licenses and are documented in `frontend/vendor/README.md`.
 
-The Bookworm and Debian 13 base images previously used by the Dockerfiles had
-reported OS and bundled npm advisories. Production and development stages now use
-minimal Chainguard Node 26 and Rust images; the backend runtime uses the minimal
-Chainguard glibc image. The Cargo registry is kept in a BuildKit cache rather than
-in the builder image, so unrelated test lockfiles from downloaded crate sources
-are not retained. All current build and deployment images were scanned without
-ignoring unfixed findings.
+The container-image results above are historical. Dockerfiles, Compose files,
+container deployment helpers, and Trivy image jobs were removed when DBsaur
+became desktop-only. They no longer describe a supported deployment.
 
-CI audits the live npm registry and RustSec database and builds and scans both
-build stages and deployment images. It runs on pushes, pull requests, manual
-dispatch, and daily. Trivy is pinned to version 0.76.0 and its release archive is
-checked against the official SHA-256 before installation. To reproduce the package
-audits:
+CI audits the live npm registry and RustSec database on pushes, pull requests,
+manual runs, and daily. To reproduce all current package audits:
 
 ```sh
-npm --prefix frontend ci
-npm --prefix frontend audit --offline=false --audit-level=low
 cargo install cargo-audit --locked --version 0.23.0
-cargo audit --file backend/Cargo.lock
+npm run audit
 ```
 
-Image scans run in `.github/workflows/security.yml` against all severities without
-`--ignore-unfixed`. These results are point-in-time checks for published
-advisories; they cannot detect vulnerabilities that have not been disclosed or
-added to the advisory databases. CI repeats the checks daily. Scans do not replace
-application security review, penetration testing, or license review.
+These are point-in-time checks for published advisories; they cannot detect
+vulnerabilities that have not been disclosed or added to advisory databases.
+Scans do not replace application security review or license review.

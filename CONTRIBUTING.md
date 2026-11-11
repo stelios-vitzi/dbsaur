@@ -13,11 +13,14 @@ From the repository root:
 
 ```sh
 npm --prefix frontend ci
-npm run dev
+cargo install tauri-cli --locked --version 2.12.4
+cargo xtask dev
 ```
 
-The sample workspace needs no database. See [README.md](README.md) for Docker,
-connection storage, and disposable database test configuration.
+The sample workspace needs no database. DBsaur ships only as a desktop app; the
+Nuxt interface is bundled into Tauri and the Rust API runs inside that process.
+See [README.md](README.md) for native builds and [the user guide](docs/user-guide.md)
+for connection storage and disposable database test configuration.
 
 Before submitting a pull request, run:
 
@@ -26,12 +29,14 @@ npm run format
 npm run typecheck
 npm run lint
 npm test
-npm run build
+npm run test:packaging
+npm run test:desktop
+cargo xtask build
 cargo install cargo-audit --locked
 npm run audit
 ```
 
-Commit both dependency lockfiles when changing dependencies. Do not suppress
+Commit the frontend and all three Cargo dependency lockfiles when changing dependencies. Do not suppress
 advisories or describe an incomplete scan as clean. Never run ignored database
 tests unless you explicitly configured a disposable database; some tests create
 and drop databases. CI runs the sample and unit tests without database credentials.

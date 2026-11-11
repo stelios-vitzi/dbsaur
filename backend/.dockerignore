@@ -1,8 +1,0 @@
-target
-target-validation
-.env*
-*.pem
-*.key
-*.p12
-*.pfx
-*.sqlite*

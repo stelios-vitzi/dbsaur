@@ -15,6 +15,6 @@ Remove credentials, private hosts, connection strings, and personal database dat
 - WebDB commit/version:
 - OS and browser:
 - Database provider/version (if relevant):
-- Local development or Docker:
+- Installed desktop package or native development build:
 
 **Sanitized error message or screenshot**

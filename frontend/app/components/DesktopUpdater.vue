@@ -18,7 +18,7 @@ async function refresh() {
   try {
     status.value = await $fetch<UpdateStatus>('/api/desktop/update')
   } catch {
-    // Ordinary web deployments have no desktop updater endpoint.
+    // The local desktop API may have stopped.
     if (status.value) error.value = 'Could not reach the updater. Reopen the app to try again.'
     return
   }

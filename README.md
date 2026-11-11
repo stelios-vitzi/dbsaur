@@ -38,7 +38,7 @@ See the [user guide](docs/user-guide.md) for dialect, editing, and connection li
 
 Published packages are available from [GitHub Releases](https://github.com/stelios-vitzi/dbsaur/releases).
 The desktop application includes the interface and Rust API; end users do not
-need Node.js, Rust, Docker, or a separate web server. Database servers remain external.
+need Node.js, Rust, or a separate server. Database servers remain external.
 
 | Platform                       | Release packages                       | Installation                                                                  |
 | ------------------------------ | -------------------------------------- | ----------------------------------------------------------------------------- |
@@ -49,7 +49,8 @@ need Node.js, Rust, Docker, or a separate web server. Database servers remain ex
 Linux release builds use Ubuntu 22.04 as their compatibility baseline and require
 WebKitGTK 4.1. macOS builds target macOS 11 or newer and use an ad-hoc signature;
 Developer ID signing and notarization are required for distribution without
-Gatekeeper warnings. Windows and Linux packages are unsigned.
+Gatekeeper warnings. Windows packages have no Authenticode certificate. Updater
+artifacts carry separate signatures for in-app verification.
 
 ## Build and run from source
 
@@ -104,17 +105,9 @@ cargo xtask build --target universal-apple-darwin --bundles app,dmg
 
 Use `cargo xtask install --universal` to build and install that Mac bundle.
 
-### Optional web development
-
-```sh
-npm run dev
-```
-
-Open `http://127.0.0.1:34616`; the Rust API listens on `127.0.0.1:34617`.
-The desktop application uses its own loopback endpoint on port `34618` and stops
-that API when it exits. Saved desktop connections are configured automatically;
-web vault configuration and Docker deployment are covered in the
-[operations guide](docs/user-guide.md#saved-connections).
+The desktop application serves its bundled interface and protected local API on
+`127.0.0.1:34618`; both stop when the native application exits. Saved connections
+are configured automatically. Standalone browser/server deployment is not supported.
 
 ## Tests and security checks
 
@@ -140,7 +133,7 @@ requires npm audits with no **high or critical** findings and RustSec audits wit
 Audit errors block publication. No advisory exceptions are configured.
 
 The [security workflow](.github/workflows/security.yml) repeats dependency audits
-and container scans on pushes, pull requests, manual runs, and a daily schedule.
+on pushes, pull requests, manual runs, and a daily schedule.
 Dependency updates are manual; these checks do not create dependency-update commits.
 See [SECURITY.md](SECURITY.md) for current findings and vulnerability reporting.
 
@@ -173,11 +166,11 @@ instructions and [CONTRIBUTING.md](CONTRIBUTING.md) for contribution guidance.
 ## Project structure
 
 ```text
-frontend/       Nuxt 4, Vue 3, TypeScript, interface and web API proxy
+frontend/       Nuxt 4, Vue 3, TypeScript, bundled desktop interface
 backend/        Rust/Axum API, database adapters, sessions, encrypted vault
 src-tauri/      Native desktop host, local API protection, installer configuration
 xtask/          Desktop build and installation commands
-scripts/        Development helpers, smoke tests, release asset collection
+scripts/        Linux build prerequisites and desktop release helpers
 docs/           Detailed usage, operations, and historical reviews
 ```
 
@@ -186,8 +179,8 @@ docs/           Detailed usage, operations, and historical reviews
 DBsaur is a trusted, single-user tool. Database permissions remain the security
 boundary; use a SELECT-only account for browsing. TLS is disabled by default, so
 enable verified TLS before sending credentials over an untrusted network.
-Keep the API private. Remote or shared deployments require authentication,
-HTTPS, and appropriate network controls.
+The embedded API is bound to loopback and protected by a desktop session token.
+Remote or shared deployment is not supported.
 
 Credentials remain in session memory unless saved to the encrypted vault. Protect
 the vault and its key; losing the key makes stored credentials unrecoverable.

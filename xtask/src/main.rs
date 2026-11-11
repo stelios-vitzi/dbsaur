@@ -35,16 +35,14 @@ fn main() -> Result {
             // cmd is needed for npm.cmd on Windows; no user arguments enter the shell.
             let mut command = if cfg!(windows) {
                 let mut command = Command::new("cmd");
-                command.args(["/d", "/c", "npm exec -- nuxt generate"]);
+                command.args(["/d", "/c", "npm run build"]);
                 command
             } else {
                 let mut command = Command::new("npm");
-                command.args(["exec", "--", "nuxt", "generate"]);
+                command.args(["run", "build"]);
                 command
             };
-            run(command
-                .current_dir(root.join("frontend"))
-                .env("DBSAUR_DESKTOP", "1"))?;
+            run(command.current_dir(root.join("frontend")))?;
         }
         Some(action @ ("dev" | "build")) => desktop(root, action, &args.collect::<Vec<_>>())?,
         Some("install") => install::install(root, &args.collect::<Vec<_>>())?,

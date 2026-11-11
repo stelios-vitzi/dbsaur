@@ -325,7 +325,7 @@ async fn select_database(
 }
 fn repository(state: &AppState) -> AppResult<&dyn ConnectionRepository> {
     state.connections.as_deref().ok_or_else(|| {
-        invalid("Saving connections requires WEBDB_VAULT_KEY and WEBDB_STORE_PATH on the backend.")
+        invalid("The desktop connection store is unavailable. Restart DBsaur and try again.")
     })
 }
 async fn saved_connections(State(state): State<Shared>) -> AppResult<Json<serde_json::Value>> {

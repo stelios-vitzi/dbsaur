@@ -1,7 +1,7 @@
 export const privacyConfig = {
   email: 'steliosvitzi@gmail.com',
-  updated: '21 October 2026',
-  version: 2,
+  updated: '11 November 2026',
+  version: 3,
   storageKey: 'webdb.privacy-notice.v1',
   retentionDays: 180,
 }
@@ -27,39 +27,39 @@ export const legalDocuments = {
     sections: [
       [
         'Who operates DBsaur',
-        'DBsaur is open-source software that you can run locally or self-host. The person or organization running an installation controls its server, connection store, and infrastructure. Project maintainers do not receive your database content through the software. Contact the installation operator for questions about that deployment.',
+        'DBsaur is an open-source desktop application running on your computer. You control the application data directory and your selected database connections. Project maintainers do not receive your database content through the software. Standalone web hosting is not supported.',
       ],
       [
         'Database connections and content',
-        'DBsaur sends connection details, SQL queries, database metadata, and records between your browser, the DBsaur backend, and the database you select. This is server-assisted processing; database content does not stay exclusively in your browser. Connect only to databases you are authorized to use. The database owner remains responsible for the lawful use of the personal data held in that database.',
+        'Connection details, SQL queries, database metadata, and records pass between the bundled interface, the local Rust process, and the database you select. The application API is restricted to loopback and a private desktop session. Connect only to databases you are authorized to use. The database owner remains responsible for the lawful use of personal data held in that database.',
       ],
       [
         'Sessions and saved connections',
-        'Active connections and credentials are held in backend memory for a session lasting up to eight hours. Disconnecting removes the active session. An HttpOnly, SameSite=Strict cookie named webdb_session identifies the session and is scoped to /api. If server-side saving is configured and you choose to save a connection, its credentials are encrypted in the server connection store until you remove it. Server backups may retain copies under the installation operator’s backup policy. Credentials are never saved in browser storage by DBsaur.',
+        'Active connections and credentials are held in local process memory for up to eight hours. Disconnecting removes the active session; closing the app stops its local API. An HttpOnly, SameSite=Strict cookie named webdb_session identifies the database session, and dbsaur_desktop protects the desktop API. Saved connection details are encrypted in connections.sqlite using vault.key in your per-user application data directory until removed. Backups can retain copies. Credentials are never persisted in the interface local storage.',
       ],
       [
         'Browser storage and downloads',
-        'Queries that you explicitly save are stored in localStorage under webdb.saved-queries.v1 until you remove them or clear site data. SQL can contain sensitive values: avoid saving secrets or personal data in queries on shared devices. The privacy-notice preference stores only its version and expiry for 180 days under webdb.privacy-notice.v1. Unsaved query drafts and displayed records are held in page memory. JSON exports and clipboard copies remain under your control outside DBsaur. Your browser may cache application assets.',
+        'Queries you explicitly save remain in the embedded webview localStorage under webdb.saved-queries.v1 until removed or the app data is cleared. Avoid saving secrets in SQL. The privacy-notice preference stores only its version and expiry for 180 days under webdb.privacy-notice.v1. Unsaved drafts and displayed records remain in memory. JSON exports and clipboard copies remain under your control outside DBsaur. The webview may cache bundled application assets.',
       ],
       [
         'Purposes and legal grounds',
-        'Connection and query data are processed to provide the database operations you request. Installation operators are responsible for identifying and documenting any applicable legal basis for processing personal data. Infrastructure providers may process IP addresses, request times, and technical connection information. Contact the installation operator for its privacy notice, logging, and retention details. This software notice does not certify a deployment as compliant with data-protection law.',
+        'Connection and query data are processed to perform the database operations you request. You or your organization remain responsible for the lawful processing of personal data in selected databases. This software notice does not certify your use as compliant with data-protection law.',
       ],
       [
         'Recipients and international transfers',
-        'Requests reach the DBsaur server and your selected database server, together with hosting or network providers needed to deliver them. DBsaur includes no analytics, advertising, tracking pixels, or remote font services. Hosting locations, infrastructure recipients, and any international transfer safeguards depend on the deployment; request those details from its operator before submitting sensitive data.',
+        'Database requests go from your computer to your selected database server over your configured network connection. Signed release builds contact GitHub to check for updates and download them; GitHub receives connection metadata such as your IP address, but no database credentials, queries, or records. DBsaur includes no analytics, advertising, tracking pixels, or remote font services. Your database and network providers control their own locations and data handling.',
       ],
       [
         'Map backgrounds',
-        'PostGIS geometry previews are processed by your selected database and displayed in the browser. Opening a map loads its VijiTiles background using vector tiles and fonts from vijimaps.com, sharing your IP address and the viewed map area with that provider. You can turn off VijiTiles background in the preview. Geometry values, queries, and record attributes are not included in tile requests.',
+        'PostGIS geometry previews are processed by your selected database and displayed in the desktop application. Opening a map loads vector tiles and fonts from vijimaps.com, sharing your IP address and the viewed map area with that provider. You can turn off VijiTiles background in the preview. Geometry values, queries, and record attributes are not included in tile requests.',
       ],
       [
         'Your GDPR rights',
-        'Applicable data-protection rights and the process for exercising them depend on your jurisdiction and the installation. Contact the installation operator or the organization responsible for the data; do not send credentials or database records to project maintainers. The operator must provide any legally required privacy disclosures and request procedures. DBsaur includes no automated decision-making or profiling feature.',
+        'Applicable data-protection rights depend on your jurisdiction and the data being processed. Contact the organization responsible for your database for requests concerning its records; do not send credentials or database records to project maintainers. DBsaur includes no automated decision-making or profiling feature.',
       ],
       [
         'Control and contact',
-        `Remove saved queries in the query library, remove saved connections on the connection screen, disconnect sessions, and clear your notice preference through Privacy settings in the footer. For data held by your database or a separate deployment, contact its operator. For questions about the software itself, write to ${privacyConfig.email}.`,
+        'Remove saved queries in the query library, remove saved connections on the connection screen, disconnect sessions, and clear your notice preference through Privacy settings. For records held by your database, contact its operator. For questions about the software itself, write to steliosvitzi@gmail.com.',
       ],
     ],
   },
@@ -69,7 +69,7 @@ export const legalDocuments = {
     sections: [
       [
         'Operator and scope',
-        'DBsaur is a local, single-user database tool with no built-in multi-user authentication or per-user authorization. Keep the backend private. Installation operators are responsible for access controls and any additional terms for their hosted service.',
+        'DBsaur is a desktop application for a trusted, single-user workstation. Its local API is embedded in the native process and protected by a private desktop session. It does not provide a hosted web service or multi-user access.',
       ],
       [
         'Open-source license',
@@ -85,7 +85,7 @@ export const legalDocuments = {
       ],
       [
         'Credentials and shared devices',
-        'Protect your database credentials and use trusted devices and secure connections. Saved connections belong to the installation’s server store and must only be enabled on a trusted deployment with suitable access controls. Saved queries reside in your browser and may be available to others using that browser profile. Disconnect and remove saved information when appropriate.',
+        'Protect your database credentials and use trusted devices and secure connections. Saved connections belong to the encrypted store in your OS user data directory. Saved queries reside in the embedded webview storage and may be available to others using the same OS account. Disconnect and remove saved information when appropriate.',
       ],
       [
         'Availability and accuracy',
@@ -97,7 +97,7 @@ export const legalDocuments = {
       ],
       [
         'Privacy, third parties, and changes',
-        'The Privacy policy explains how the software handles data. Third-party database and hosting services are subject to their own terms. Installation operators must provide any required deployment-specific disclosures. These notes may change as the software changes; the date above identifies the current version.',
+        'The Privacy policy explains how the application handles data. Third-party database, update-hosting, map, and network services are subject to their own terms. These notes may change as the software changes; the date above identifies the current version.',
       ],
     ],
   },
