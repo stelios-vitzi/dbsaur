@@ -802,7 +802,7 @@ dependencies = [
 
 [[package]]
 name = "dbsaur"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "aes-gcm",
  "async-trait",
@@ -819,7 +819,7 @@ dependencies = [
 
 [[package]]
 name = "dbsaur-desktop"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "axum",
  "dbsaur",
