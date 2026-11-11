@@ -23,7 +23,7 @@ files when working in a subdirectory that has one.
 
 ## Architecture and conventions
 
-- Frontend: Nuxt 4, Vue Composition API, strict TypeScript, and `app/` conventions.
+- Frontend: Vue 3, Vite, Composition API, strict TypeScript, and `app/` conventions.
 - Backend: Rust, Axum, and SQLx. Do not add .NET projects.
 - Distribution is desktop-only. Do not restore standalone web hosting, Docker,
   a Nuxt server proxy, or a separately launched API. The frontend is static

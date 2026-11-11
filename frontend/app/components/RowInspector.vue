@@ -1,4 +1,8 @@
 <script setup lang="ts">
+import { onMounted, useTemplateRef } from 'vue'
+import { useToast } from '../composables/useToast'
+import AppIcon from './AppIcon.vue'
+
 import type { ColumnInfo } from '../../shared/database'
 defineProps<{
   row: Record<string, unknown> | null

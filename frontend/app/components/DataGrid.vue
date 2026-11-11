@@ -1,4 +1,8 @@
 <script setup lang="ts">
+import { ref, watch, useId } from 'vue'
+import AppIcon from './AppIcon.vue'
+import GeometryMap from './GeometryMap.vue'
+
 import type { TablePage } from '../../shared/database'
 import { isSpatialType } from '../utils/geometry'
 const props = defineProps<{

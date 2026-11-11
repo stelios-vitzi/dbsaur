@@ -1,4 +1,23 @@
 <script setup lang="ts">
+import { ref, shallowRef, computed, watch, nextTick, useTemplateRef } from 'vue'
+import { useToast } from '../composables/useToast'
+import { useDatabase } from '../composables/useDatabase'
+import { useWorkspaceTabs } from '../composables/useWorkspaceTabs'
+import { useSidebarResize } from '../composables/useSidebarResize'
+import AppIcon from './AppIcon.vue'
+import CellEditor from './CellEditor.vue'
+import ConnectionForm from './ConnectionForm.vue'
+import ContextMenu from './ContextMenu.vue'
+import DatabaseExplorer from './DatabaseExplorer.vue'
+import DatabaseLauncher from './DatabaseLauncher.vue'
+import DatabaseSelect from './DatabaseSelect.vue'
+import DatabaseSettings from './DatabaseSettings.vue'
+import DataGrid from './DataGrid.vue'
+import MutationDialog from './MutationDialog.vue'
+import QueryEditor from './QueryEditor.vue'
+import SchemaDiagram from './SchemaDiagram.vue'
+import SchemaTableEditor from './SchemaTableEditor.vue'
+
 import { providerOptions, quoteIdentifier } from '../providers'
 import type {
   ColumnInfo,

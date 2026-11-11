@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { ref, useId } from 'vue'
+
 defineProps<{ label: string; text: string }>()
 const id = useId()
 const open = ref(false)

@@ -60,7 +60,7 @@ function setup(t) {
   new Function('require', 'module', 'exports', ...Object.keys(runtime), javascript)(
     (name) =>
       name === 'vue'
-        ? vue
+        ? { ...vue, ...runtime }
         : name === '../utils/databaseChange'
           ? { DatabaseChangeCancelled }
           : { layoutSchemaTables },

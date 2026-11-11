@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { computed } from 'vue'
+
 import settings from '@material-symbols/svg-400/outlined/settings.svg?raw'
 import database from '@material-symbols/svg-400/outlined/database.svg?raw'
 import table from '@material-symbols/svg-400/outlined/table_chart.svg?raw'

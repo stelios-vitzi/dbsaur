@@ -169,13 +169,16 @@ instructions and [CONTRIBUTING.md](CONTRIBUTING.md) for contribution guidance.
 ## Project structure
 
 ```text
-frontend/       Nuxt 4, Vue 3, TypeScript, bundled desktop interface
+frontend/       Vue 3, Vite, TypeScript, bundled desktop interface
 backend/        Rust/Axum API, database adapters, sessions, encrypted vault
 src-tauri/      Native desktop host, local API protection, installer configuration
 xtask/          Desktop build and installation commands
 scripts/        Linux build prerequisites and desktop release helpers
-docs/           Detailed usage, operations, and historical reviews
+docs/           Detailed usage, operations, and architecture reviews
 ```
+
+See the [refactoring review](docs/refactoring-review.md) for current architecture findings
+and the plain Vue migration scope.
 
 ## Security and data handling
 

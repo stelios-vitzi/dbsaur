@@ -4,15 +4,20 @@ import { test } from 'node:test'
 import { compileScript, parse } from '@vue/compiler-sfc'
 import ts from 'typescript'
 import * as vue from 'vue'
+import {
+  createConnectionPreferences,
+  connectionKey,
+} from '../app/services/connectionPreferences.ts'
 
 function evaluate(source, runtime, imports = {}) {
-  const javascript = ts.transpileModule(source.replaceAll('import.meta.client', 'true'), {
+  const javascript = ts.transpileModule(source, {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
   }).outputText
   const module = { exports: {} }
   const bindings = Object.entries(runtime).filter(([name]) => /^[a-zA-Z_$][\w$]*$/.test(name))
   new Function('require', 'module', 'exports', ...bindings.map(([name]) => name), javascript)(
-    (name) => (name === 'vue' ? vue : imports[name]),
+    (name) =>
+      name === 'vue' ? { ...vue, ...runtime } : (imports[name] ?? runtime.imports?.[name]),
     module,
     module.exports,
     ...bindings.map(([, value]) => value),
@@ -23,25 +28,27 @@ function source(path) {
   return readFileSync(new URL(`../app/${path}`, import.meta.url), 'utf8')
 }
 function setup(t) {
-  const app = {}
-  const states = new Map()
   const writes = []
   const scope = vue.effectScope()
   const runtime = {
     ...vue,
-    useNuxtApp: () => app,
-    useState(key, initial) {
-      if (!states.has(key)) states.set(key, vue.ref(initial()))
-      return states.get(key)
-    },
     onMounted: () => {},
     $fetch: async (url, options) => {
       writes.push({ url, ...options })
       return { affectedRows: 1 }
     },
   }
-  const { useToast } = evaluate(source('composables/useToast.ts'), runtime)
+  let toastState
+  runtime.inject = () => toastState
+  const { useToast, createToastState } = evaluate(source('composables/useToast.ts'), runtime)
+  toastState = createToastState()
   runtime.useToast = useToast
+  runtime.imports = {
+    '../composables/useToast': { useToast },
+    './useToast': { useToast },
+    '../services/http': { $fetch: runtime.$fetch },
+    '../services/connectionPreferences': { createConnectionPreferences, connectionKey },
+  }
   const cancelled = evaluate(source('utils/databaseChange.ts'), runtime)
   const { useDatabase } = evaluate(source('composables/useDatabase.ts'), runtime, {
     '../utils/databaseChange': cancelled,

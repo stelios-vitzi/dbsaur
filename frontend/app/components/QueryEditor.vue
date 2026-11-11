@@ -1,4 +1,9 @@
 <script setup lang="ts">
+import { ref, computed, watch, onMounted, onUnmounted, nextTick, useTemplateRef } from 'vue'
+import { useActionFeedback } from '../composables/useToast'
+import AppIcon from './AppIcon.vue'
+import SqlEditor from './SqlEditor.vue'
+
 import type { TableInfo } from '../../shared/database'
 const props = defineProps<{
   provider?: string

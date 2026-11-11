@@ -1,4 +1,22 @@
 <script setup lang="ts">
+import {
+  ref,
+  triggerRef,
+  shallowRef,
+  computed,
+  watch,
+  onMounted,
+  onScopeDispose,
+  nextTick,
+  useId,
+  useTemplateRef,
+} from 'vue'
+import { useToast } from '../composables/useToast'
+import { useActionFeedback } from '../composables/useToast'
+import { $fetch } from '../services/http'
+import AppIcon from './AppIcon.vue'
+import DatabaseSettingField from './DatabaseSettingField.vue'
+
 import type { DatabaseSettings, DatabaseSetting } from '../../shared/database'
 const props = defineProps<{ database: string; provider: string }>()
 const emit = defineEmits<{ close: [] }>()

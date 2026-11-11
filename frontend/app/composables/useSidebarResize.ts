@@ -1,3 +1,4 @@
+import { ref, onMounted, onScopeDispose } from 'vue'
 export function useSidebarResize() {
   const width = ref(320)
   const minimum = ref(220)
@@ -53,7 +54,7 @@ export function useSidebarResize() {
   })
   onScopeDispose(() => {
     stop()
-    if (import.meta.client) window.removeEventListener('resize', updateBounds)
+    window.removeEventListener('resize', updateBounds)
   })
   return {
     width,

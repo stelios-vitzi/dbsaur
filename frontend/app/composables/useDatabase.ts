@@ -1,3 +1,7 @@
+import { createConnectionPreferences, connectionKey } from '../services/connectionPreferences'
+import { ref, shallowRef, watch, onMounted, onScopeDispose } from 'vue'
+import { useToast } from './useToast'
+import { $fetch } from '../services/http'
 import { DatabaseChangeCancelled } from '../utils/databaseChange'
 import type {
   ConnectionInput,
@@ -43,57 +47,8 @@ export function useDatabase() {
   const activeQuery = ref<string | null>(null)
   let requestVersion = 0
   let controller: AbortController | undefined
-  let activeConnectionKey: string | undefined
-  const activeConnectionStorageKey = 'webdb:active-connection-key'
-
-  function setActiveConnectionKey(key: string | undefined) {
-    activeConnectionKey = key
-    try {
-      if (key) localStorage.setItem(activeConnectionStorageKey, key)
-      else localStorage.removeItem(activeConnectionStorageKey)
-    } catch {
-      /* The session continues to work if the browser blocks local storage. */
-    }
-  }
-
-  function storedDatabase(key: string) {
-    try {
-      return localStorage.getItem(`webdb:last-database:${key}`) || undefined
-    } catch {
-      return undefined
-    }
-  }
-  function rememberDatabase(database: string, key = activeConnectionKey) {
-    if (!key || !database) return
-    try {
-      localStorage.setItem(`webdb:last-database:${key}`, database)
-    } catch {
-      /* Database preference remains in the active session if storage is unavailable. */
-    }
-  }
-  function forgetDatabase(key: string) {
-    try {
-      localStorage.removeItem(`webdb:last-database:${key}`)
-    } catch {
-      /* Nothing else depends on this local preference. */
-    }
-  }
-  async function connectionKey(input: ConnectionInput, savedId?: string) {
-    if (savedId) return `saved:${savedId}`
-    if (input.provider === 'demo' || !globalThis.crypto?.subtle) return undefined
-    const identity = JSON.stringify([
-      input.provider,
-      input.host.trim().toLowerCase(),
-      input.port,
-      input.username,
-    ])
-    try {
-      const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(identity))
-      return `connection:${Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('')}`
-    } catch {
-      return undefined
-    }
-  }
+  const preferences = createConnectionPreferences()
+  const { setActiveConnectionKey, storedDatabase, rememberDatabase, forgetDatabase } = preferences
 
   function message(cause: unknown, operation?: 'save') {
     const failure = cause as { data?: { message?: string }; statusCode?: number; status?: number }
@@ -328,7 +283,7 @@ export function useDatabase() {
     try {
       await $fetch(`/api/connections/${encodeURIComponent(id)}`, { method: 'DELETE' })
       forgetDatabase(`saved:${id}`)
-      if (activeConnectionKey === `saved:${id}`) setActiveConnectionKey(undefined)
+      if (preferences.activeKey === `saved:${id}`) setActiveConnectionKey(undefined)
       toast.show('Saved connection removed.')
       await loadSavedConnections()
     } catch (cause) {
@@ -413,11 +368,7 @@ export function useDatabase() {
     }
   }
   onMounted(async () => {
-    try {
-      activeConnectionKey = localStorage.getItem(activeConnectionStorageKey) || undefined
-    } catch {
-      activeConnectionKey = undefined
-    }
+    preferences.restore()
     try {
       await loadSavedConnections()
     } catch {

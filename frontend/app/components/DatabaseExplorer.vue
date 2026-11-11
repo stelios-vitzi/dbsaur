@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import { ref, computed, watch, useId } from 'vue'
+import AppIcon from './AppIcon.vue'
+
 import type { TableInfo } from '../../shared/database'
 
 const props = defineProps<{

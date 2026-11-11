@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { computed, useId } from 'vue'
+
 import type { DatabaseSetting } from '../../shared/database'
 const props = defineProps<{ setting: DatabaseSetting; value: string | null; disabled: boolean }>()
 const emit = defineEmits<{ 'update:value': [value: string | null] }>()

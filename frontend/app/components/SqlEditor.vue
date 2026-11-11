@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { watch, onMounted, onBeforeUnmount, useTemplateRef } from 'vue'
+
 import { Compartment, EditorState, Prec } from '@codemirror/state'
 import { EditorView, keymap, lineNumbers, drawSelection, tooltips } from '@codemirror/view'
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands'

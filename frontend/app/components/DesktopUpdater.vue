@@ -1,4 +1,8 @@
 <script setup lang="ts">
+import { ref, onMounted, onBeforeUnmount } from 'vue'
+import { useToast } from '../composables/useToast'
+import { $fetch } from '../services/http'
+
 interface UpdateStatus {
   phase: string
   version?: string

@@ -1,4 +1,8 @@
 <script setup lang="ts">
+import { ref, watch, onMounted, onScopeDispose, useTemplateRef } from 'vue'
+import { $fetch } from '../services/http'
+import AppIcon from './AppIcon.vue'
+
 import type { Map as MapLibreMap, StyleSpecification } from 'maplibre-gl'
 import type { Geometry } from 'geojson'
 import mapWorkerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?url'

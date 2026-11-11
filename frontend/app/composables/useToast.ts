@@ -1,3 +1,5 @@
+import { ref, watch, onScopeDispose, inject } from 'vue'
+import type { InjectionKey, Ref } from 'vue'
 export type ToastTone = 'success' | 'error' | 'info'
 export interface ToastMessage {
   id: number
@@ -6,17 +8,22 @@ export interface ToastMessage {
   confirmation?: boolean
 }
 
-const confirmations = new WeakMap<object, Map<number, (accepted: boolean) => void>>()
+export function createToastState() {
+  return {
+    messages: ref<ToastMessage[]>([]),
+    sequence: ref(0),
+    resolvers: new Map<number, (accepted: boolean) => void>(),
+  }
+}
+export const toastKey: InjectionKey<ReturnType<typeof createToastState>> = Symbol('toasts')
 
 export function useToast() {
-  const app = useNuxtApp()
-  const resolvers = confirmations.get(app) ?? new Map<number, (accepted: boolean) => void>()
-  confirmations.set(app, resolvers)
+  const state = inject(toastKey)
+  if (!state) throw new Error('Toast state must be provided by the application.')
+  const { messages, sequence, resolvers } = state
   const owned = new Set<number>()
-  const messages = useState<ToastMessage[]>('action-toasts', () => [])
-  const sequence = useState('action-toast-sequence', () => 0)
   function show(message: string, tone: ToastTone = 'success') {
-    if (!import.meta.client || !message) return
+    if (!message) return
     const id = ++sequence.value
     const transient = messages.value.filter((item) => !item.confirmation).slice(-4)
     messages.value = [
@@ -35,7 +42,6 @@ export function useToast() {
     respond(id, false)
   }
   async function confirm(message: string) {
-    if (!import.meta.client) return false
     const id = ++sequence.value
     owned.add(id)
     try {

@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import { ref, shallowRef, computed, watch, onMounted, nextTick, useTemplateRef } from 'vue'
+import AppIcon from './AppIcon.vue'
+
 import { DatabaseChangeCancelled } from '../utils/databaseChange'
 import type { RelationshipChange, TableInfo } from '../../shared/database'
 import { layoutSchemaTables } from '../utils/schemaFlowLayout'

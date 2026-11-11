@@ -1,25 +1,23 @@
 <script setup lang="ts">
+import { computed } from 'vue'
+import AppIcon from '../components/AppIcon.vue'
+
+import { RouterLink } from 'vue-router'
 import { legalDocuments, privacyConfig } from '../utils/privacy'
-const route = useRoute()
-const document = computed(() => {
-  const key = route.params.document
-  if (key !== 'privacy' && key !== 'terms')
-    throw createError({ statusCode: 404, statusMessage: 'Page not found' })
-  return legalDocuments[key]
-})
-useHead(() => ({ title: `${document.value.title} — DBsaur` }))
+const props = defineProps<{ documentKey: 'privacy' | 'terms' }>()
+const document = computed(() => legalDocuments[props.documentKey])
 </script>
 
 <template>
   <div class="legal-page">
     <header class="app-header">
-      <NuxtLink to="/" class="brand" aria-label="DBsaur home"
+      <RouterLink to="/" class="brand" aria-label="DBsaur home"
         ><span class="brand-icon"><AppIcon name="database" :size="20" /></span>DB<span
           class="brand-db"
           >saur</span
-        ></NuxtLink
+        ></RouterLink
       >
-      <NuxtLink to="/" class="button secondary small">Back to DBsaur</NuxtLink>
+      <RouterLink to="/" class="button secondary small">Back to DBsaur</RouterLink>
     </header>
     <main class="legal-content">
       <h1>{{ document.title }}</h1>
@@ -35,7 +33,7 @@ useHead(() => ({ title: `${document.value.title} — DBsaur` }))
       <p>
         <a href="https://github.com/SteliosDaVitzi/web-db-tool">Source code and MIT license</a>
       </p>
-      <p v-if="route.params.document === 'privacy'" class="legal-sources">
+      <p v-if="documentKey === 'privacy'" class="legal-sources">
         Learn more:
         <a
           href="https://www.edpb.europa.eu/sme/be-compliant/respect-individuals-rights_en"

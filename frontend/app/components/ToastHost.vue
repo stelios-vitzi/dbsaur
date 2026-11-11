@@ -1,4 +1,8 @@
 <script setup lang="ts">
+import { shallowRef, watch, onMounted, onBeforeUnmount, nextTick, useTemplateRef } from 'vue'
+import { useToast } from '../composables/useToast'
+import AppIcon from './AppIcon.vue'
+
 const { messages, dismiss, respond } = useToast()
 const target = shallowRef<HTMLElement | string>('body')
 const region = useTemplateRef<HTMLElement>('region')

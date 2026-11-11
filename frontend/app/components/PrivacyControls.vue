@@ -1,4 +1,9 @@
 <script setup lang="ts">
+import { onMounted, useTemplateRef } from 'vue'
+import { useToast } from '../composables/useToast'
+import AppIcon from './AppIcon.vue'
+
+import { RouterLink } from 'vue-router'
 import { privacyConfig, validPrivacyChoice } from '../utils/privacy'
 const dialog = useTemplateRef<HTMLDialogElement>('dialog')
 const toast = useToast()
@@ -51,7 +56,7 @@ onMounted(() => {
       <a class="footer-attribution" href="https://vijitek.com">
         <span class="attribution-logo" aria-hidden="true">
           <img
-            src="~/assets/images/vijitek-logo.webp"
+            src="../assets/images/vijitek-logo.webp"
             alt=""
             width="1280"
             height="1280"
@@ -62,8 +67,8 @@ onMounted(() => {
       </a>
     </span>
     <nav aria-label="Legal and privacy">
-      <NuxtLink to="/privacy">Privacy policy</NuxtLink>
-      <NuxtLink to="/terms">Terms of use</NuxtLink>
+      <RouterLink to="/privacy">Privacy policy</RouterLink>
+      <RouterLink to="/terms">Terms of use</RouterLink>
       <button type="button" @click="open">Privacy settings</button>
     </nav>
   </footer>
@@ -95,8 +100,10 @@ onMounted(() => {
       notice for 180 days in this app.
     </p>
     <div class="privacy-policy-links">
-      <NuxtLink to="/privacy" @click="dialog?.close()">Privacy policy &amp; data rights</NuxtLink>
-      <NuxtLink to="/terms" @click="dialog?.close()">Terms of use</NuxtLink>
+      <RouterLink to="/privacy" @click="dialog?.close()"
+        >Privacy policy &amp; data rights</RouterLink
+      >
+      <RouterLink to="/terms" @click="dialog?.close()">Terms of use</RouterLink>
     </div>
     <div class="privacy-actions">
       <button class="text-button" type="button" @click="clearChoice">

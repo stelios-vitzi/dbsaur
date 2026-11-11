@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { ref, onMounted, onScopeDispose, useTemplateRef } from 'vue'
+
 import type { ContextAction } from '../../shared/database'
 const props = defineProps<{ x: number; y: number; label: string; actions: ContextAction[] }>()
 const emit = defineEmits<{ close: [] }>()

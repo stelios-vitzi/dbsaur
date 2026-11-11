@@ -28,10 +28,10 @@ SmartScreen warnings. macOS packages use ad-hoc signing without Developer ID
 notarization and can trigger Gatekeeper warnings. See
 [operating-system trust](docs/desktop-updates.md#operating-system-trust).
 
-Online audits were rerun after adding the updater: npm still reports 6 low and
-6 moderate findings, with no high/critical findings. All three Cargo lockfiles
-have no vulnerability findings; the desktop glib and proc-macro-error warnings
-remain visible. Native build and signed update verification are separate gates.
+Online audits were rerun after the plain Vue/Vite migration: npm reports zero
+findings. All three Cargo lockfiles have no vulnerability findings; the desktop
+glib and proc-macro-error warnings remain visible. Native build and signed update
+verification are separate gates.
 
 ## Supported versions and threat model
 
@@ -66,11 +66,11 @@ audits block high/critical findings. RustSec audits cover backend, desktop, and
 xtask lockfiles and block every vulnerability, including unscored ones. Audit
 errors also block publication. No advisory exceptions are configured.
 
-Current live audit results after the dependency and vault-driver updates:
+Current live audit results after the plain Vue/Vite refactor (11 November 2026):
 
 | Check | Result |
 | --- | --- |
-| npm | 0 high, 0 critical; 6 low and 6 moderate findings remain visible |
+| npm | 0 findings at every severity |
 | backend Cargo lockfile | No vulnerabilities |
 | desktop Cargo lockfile | No vulnerabilities; glib unsoundness and proc-macro-error maintenance warnings remain visible |
 | xtask Cargo lockfile | No vulnerabilities |
@@ -82,8 +82,9 @@ database operations run on Tokio's blocking pool. PostgreSQL and MySQL retain
 the matching SQLx 0.9.0 core/driver crates, pinned exactly because those crates
 do not promise independent semver compatibility. This avoids the SQLx umbrella
 crate's incompatible optional SQLite constraint without suppressing advisories.
-The existing crypto/TLS fixes remain in place. Upstream node-forge 1.4.3 replaces
-the previous local Forge patch and passes its security regression tests.
+The Nuxt removal also removes node-forge and braces from the resolved npm tree.
+Their overrides, local braces patch, and dependency-specific regression tests
+were removed because those dependencies are no longer installed.
 
 Passing audits alone does not publish a release: all native platform build gates
 must also pass. Version 0.1.3 removes standalone web hosting, container images,
@@ -113,8 +114,9 @@ advisories that did not have fixed releases at scan time:
   locally to reject malformed nested DigestInfo structures; the local copy has
   since been replaced by upstream 1.4.3.
 
-Regression tests cover the vulnerable inputs and valid behavior. The files retain
-the upstream licenses and are documented in `frontend/vendor/README.md`.
+At the time, regression tests covered vulnerable inputs and valid behavior.
+The Nuxt migration later removed these dependencies, patches, and their tests;
+frontend/vendor is no longer part of the current tree.
 
 The container-image results above are historical. Dockerfiles, Compose files,
 container deployment helpers, and Trivy image jobs were removed when DBsaur

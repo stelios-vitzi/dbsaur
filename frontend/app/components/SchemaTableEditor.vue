@@ -1,4 +1,8 @@
 <script setup lang="ts">
+import { ref, computed, onMounted, useTemplateRef } from 'vue'
+import { useActionFeedback } from '../composables/useToast'
+import AppIcon from './AppIcon.vue'
+
 import { DatabaseChangeCancelled } from '../utils/databaseChange'
 import { providerOptions, quoteIdentifier } from '../providers'
 import type { Mutation, TableInfo } from '../../shared/database'

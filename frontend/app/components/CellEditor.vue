@@ -1,4 +1,9 @@
 <script setup lang="ts">
+import { ref, computed, watch, onMounted, onScopeDispose, nextTick, useTemplateRef } from 'vue'
+import { useActionFeedback } from '../composables/useToast'
+import AppIcon from './AppIcon.vue'
+import GeometryMap from './GeometryMap.vue'
+
 import { DatabaseChangeCancelled } from '../utils/databaseChange'
 import type { ColumnInfo, Mutation, TableInfo } from '../../shared/database'
 import { isSpatialType } from '../utils/geometry'

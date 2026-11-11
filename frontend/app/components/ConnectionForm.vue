@@ -1,4 +1,8 @@
 <script setup lang="ts">
+import { ref, computed, watch, nextTick, useId, useTemplateRef, reactive } from 'vue'
+import AppIcon from './AppIcon.vue'
+import HelpTooltip from './HelpTooltip.vue'
+
 import { providerOptions } from '../providers'
 import { parseConnectionUrl } from '../utils/connectionUrl'
 import type { ConnectionInput, Provider, SavedConnection } from '../../shared/database'

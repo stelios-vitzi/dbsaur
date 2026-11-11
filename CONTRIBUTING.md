@@ -18,7 +18,7 @@ cargo xtask dev
 ```
 
 The sample workspace needs no database. DBsaur ships only as a desktop app; the
-Nuxt interface is bundled into Tauri and the Rust API runs inside that process.
+Vue interface is bundled into Tauri and the Rust API runs inside that process.
 See [README.md](README.md) for native builds and [the user guide](docs/user-guide.md)
 for connection storage and disposable database test configuration.
 
@@ -43,7 +43,7 @@ and drop databases. CI runs the sample and unit tests without database credentia
 
 ## Architecture and review expectations
 
-- Use Nuxt 4 `app/`, Composition API, and strict TypeScript for the frontend.
+- Use Vue 3 `app/`, Composition API, and strict TypeScript for the frontend.
 - Keep Rust HTTP handlers dependent on domain/application contracts; adapters
   implement those contracts. Register providers in the composition root.
 - Extend `DatabaseAdapter` and a dedicated provider directory for new databases.

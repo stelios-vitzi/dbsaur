@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import AppIcon from './AppIcon.vue'
+
 import type { SavedConnection } from '../../shared/database'
 
 defineProps<{

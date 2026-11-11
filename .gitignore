@@ -1,6 +1,4 @@
 node_modules/
-.nuxt/
-.output/
 .npm-cache/
 .artifacts/
 bin/
@@ -29,7 +27,7 @@ Thumbs.db
 .idea/
 .vscode/
 
-# Nuxt static desktop output
+# Vite static desktop output
 frontend/dist/
 
 # Desktop Cargo build output and installers
