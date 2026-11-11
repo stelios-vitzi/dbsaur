@@ -146,7 +146,11 @@ See [Tauri signing](https://v2.tauri.app/distribute/sign/macos/).
 installers and a standalone executable, Linux x64 deb/rpm/AppImage packages, and
 universal macOS DMG and app archives for Apple Silicon and Intel. Each platform
 adds license notices and a separately named SHA-256 manifest. All platform jobs
-must succeed before the combined GitHub Release is published. Pull
+must succeed before the combined GitHub Release is published. Publication also
+requires online npm audits with no high/critical vulnerabilities and RustSec
+audits of all three Cargo lockfiles with no known vulnerabilities (including
+advisories without a severity score). Audit failures or unavailable advisory
+services block publication; there are no allow-failure steps or advisory ignores. Pull
 requests and manual workflow runs build downloadable Actions artifacts; each
 successful push to `main` also publishes a GitHub Release. Releases use unique
 `main-<run-number>-<attempt>` tags at the pushed commit, with installer version
@@ -318,3 +322,8 @@ or security or regulatory certification. Installation operators must provide any
 privacy disclosures, legal grounds, retention policies, and access controls required
 for their own deployment. The in-app privacy notice describes software behavior;
 it is not a complete privacy policy for every hosting arrangement.
+
+## Dependency update policy
+
+Dependency updates are manual. Dependabot version-update configuration is removed;
+dependency audits and release security gates remain enabled and do not create commits.

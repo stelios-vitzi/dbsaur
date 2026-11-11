@@ -100,8 +100,37 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+  audit-npm:
+    name: Block high/critical npm vulnerabilities
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '24'
+      - run: npm --prefix frontend audit --offline=false --audit-level=high
+
+  audit-rust:
+    name: Block Rust vulnerabilities (${{ matrix.lockfile }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        lockfile: [backend/Cargo.lock, src-tauri/Cargo.lock, xtask/Cargo.lock]
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - run: cargo install cargo-audit --locked --version 0.22.2
+      # RustSec advisories without a CVSS score must also block publication.
+      - run: cargo audit --file "${{ matrix.lockfile }}"
+
   release:
-    needs: build
+    needs: [build, audit-npm, audit-rust]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 10

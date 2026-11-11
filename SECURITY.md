@@ -38,6 +38,31 @@ authorization. Session cookies are not an independent login system.
 - Pagination limits rows, not bytes. Large values and expensive queries can still
   consume memory and database resources. This is not a hostile multi-tenant service.
 
+## Release security gate — 11 November 2026
+
+The desktop release workflow requires successful tests/builds on Windows, Linux,
+and macOS plus separate dependency audit jobs before publication. Online npm
+audits block high/critical findings. RustSec audits cover backend, desktop, and
+xtask lockfiles and block every vulnerability, including unscored ones. Audit
+errors also block publication. No advisory exceptions are configured.
+
+Current live audit results after compatible crypto/TLS lockfile updates:
+
+| Check | Result |
+| --- | --- |
+| npm | 0 high, 0 critical; 3 low and 11 moderate findings remain visible |
+| backend Cargo lockfile | Blocked by RUSTSEC-2026-0459 in libsqlite3-sys 0.37.0 |
+| desktop Cargo lockfile | Blocked by the same SQLite advisory; informational dependency warnings also reported |
+| xtask Cargo lockfile | No vulnerabilities |
+
+Release publication remains blocked. The SQLite advisory requires libsqlite3-sys
+0.39.0 or newer, while SQLx 0.9.0 currently requires a version below 0.38.0.
+Resolving that requires a supported upstream dependency upgrade or a separately
+reviewed SQLite integration change; the advisory is not ignored. Compatible
+updates resolve RUSTSEC-2026-0385 (ctutils), RUSTSEC-2026-0382 (rustls-webpki), and
+RUSTSEC-2026-0381 (webpki-roots). Container scans remain a separate daily/PR/push
+workflow and are not claimed as rerun in this desktop release check.
+
 ## Dependency review — 17 October 2026
 
 Live registry and image scans completed on this date reported zero known

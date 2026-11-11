@@ -12,7 +12,7 @@
     "test:smoke": "node scripts/smoke.mjs",
     "test:write-smoke": "node scripts/write-smoke.mjs",
     "test": "cargo test --manifest-path backend/Cargo.toml --locked && node --test frontend/tests/*.test.mjs",
-    "audit": "npm --prefix frontend audit --offline=false --audit-level=low && cargo audit --file backend/Cargo.lock",
+    "audit": "npm --prefix frontend audit --offline=false --audit-level=high && cargo audit --file backend/Cargo.lock && cargo audit --file src-tauri/Cargo.lock && cargo audit --file xtask/Cargo.lock",
     "dev:desktop": "cargo xtask dev",
     "build:desktop": "cargo xtask build",
     "test:desktop": "cargo test --manifest-path src-tauri/Cargo.toml --locked --target-dir dist",
