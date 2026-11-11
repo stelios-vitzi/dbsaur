@@ -21,7 +21,7 @@ export function selectPackage(directory, extension) {
   return join(directory, matches[0])
 }
 
-export function collect({ platform, version, target = '', root = '.' }) {
+export function collect({ platform, version, target = '', root = '.', signed = false }) {
   if (!['windows-x64', 'linux-x64', 'macos-universal'].includes(platform))
     throw new Error(`Unsupported release platform: ${platform}`)
   if (!/^\d+\.\d+\.\d+$/.test(version)) throw new Error('A numeric release version is required')
@@ -54,12 +54,36 @@ export function collect({ platform, version, target = '', root = '.' }) {
       process.platform === 'win32'
         ? join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'tar.exe')
         : 'tar'
-    execFileSync(
-      tar,
-      ['-czf', resolve(output, archive), '-C', resolve(release, 'bundle/macos'), 'DBsaur.app'],
-      { stdio: 'inherit' },
-    )
-    assets.push(archive)
+    if (!signed)
+      execFileSync(
+        tar,
+        ['-czf', resolve(output, archive), '-C', resolve(release, 'bundle/macos'), 'DBsaur.app'],
+        { stdio: 'inherit' },
+      )
+    if (signed) copy(selectPackage(join(release, 'bundle/macos'), '.app.tar.gz'), archive)
+    else assets.push(archive)
+  }
+  if (signed) {
+    const directory =
+      platform === 'windows-x64' ? 'nsis' : platform === 'linux-x64' ? 'appimage' : 'macos'
+    const extension =
+      platform === 'windows-x64'
+        ? '-setup.exe'
+        : platform === 'linux-x64'
+          ? '.AppImage'
+          : '.app.tar.gz'
+    const source = selectPackage(join(release, 'bundle', directory), extension)
+    const artifact =
+      platform === 'macos-universal'
+        ? `DBsaur_${version}_macos-universal.app.tar.gz`
+        : basename(source)
+    copy(`${source}.sig`, `${artifact}.sig`)
+    if (!readFileSync(join(output, `${artifact}.sig`), 'utf8').trim())
+      throw new Error('Updater signature must not be empty')
+    if (platform === 'windows-x64') {
+      const msi = selectPackage(join(release, 'bundle/msi'), '.msi')
+      copy(`${msi}.sig`)
+    }
   }
   copy(join(root, 'LICENSE'), 'LICENSE.txt')
   copy(join(root, 'THIRD_PARTY_NOTICES.md'))
@@ -84,12 +108,48 @@ export function releaseVersion(base, runNumber) {
   return `${major}.${minor}.${Number(runNumber)}`
 }
 
+export function updateManifest({ directory, version, repository, tag }) {
+  if (!/^\d+\.\d+\.\d+$/.test(version)) throw new Error('Invalid updater version')
+  if (!/^[\w-]+\/[\w-][\w.-]*$/.test(repository) || !/^[\w-][\w.-]*$/.test(tag))
+    throw new Error('Invalid release location')
+  const platforms = {}
+  for (const [extension, targets] of [
+    ['-setup.exe', ['windows-x86_64', 'windows-x86_64-nsis']],
+    ['.msi', ['windows-x86_64-msi']],
+    ['.AppImage', ['linux-x86_64']],
+    ['.app.tar.gz', ['darwin-x86_64', 'darwin-aarch64']],
+  ]) {
+    const artifact = selectPackage(directory, extension)
+    const signature = readFileSync(`${artifact}.sig`, 'utf8').trim()
+    if (!signature) throw new Error('Updater signature must not be empty')
+    for (const target of targets)
+      platforms[target] = {
+        url: `https://github.com/${repository}/releases/download/${tag}/${encodeURIComponent(basename(artifact))}`,
+        signature,
+      }
+  }
+  return { version, platforms }
+}
+
 if (process.argv[1] && resolve(process.argv[1]) === resolve(import.meta.filename)) {
   if (process.argv[2] === 'version') {
     const config = JSON.parse(readFileSync('src-tauri/tauri.conf.json', 'utf8'))
     const version = releaseVersion(config.version, process.env.GITHUB_RUN_NUMBER || '')
     mkdirSync('.artifacts', { recursive: true })
-    writeFileSync('.artifacts/desktop-release.json', JSON.stringify({ version }) + '\n')
+    const pubkey = process.env.TAURI_UPDATER_PUBLIC_KEY?.trim()
+    const signing = process.env.RELEASE_SIGNED === 'true'
+    if (signing && !pubkey)
+      throw new Error('TAURI_UPDATER_PUBLIC_KEY is required for release builds')
+    const override = {
+      version,
+      ...(signing
+        ? {
+            bundle: { createUpdaterArtifacts: true },
+            plugins: { updater: { ...config.plugins.updater, pubkey } },
+          }
+        : {}),
+    }
+    writeFileSync('.artifacts/desktop-release.json', JSON.stringify(override) + '\n')
     if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, `version=${version}\n`)
     console.log(version)
   } else if (process.argv[2] === 'collect') {
@@ -97,8 +157,23 @@ if (process.argv[1] && resolve(process.argv[1]) === resolve(import.meta.filename
       platform: process.env.RELEASE_PLATFORM,
       version: process.env.RELEASE_VERSION,
       target: process.env.RELEASE_TARGET,
+      signed: process.env.RELEASE_SIGNED === 'true',
     })
+  } else if (process.argv[2] === 'manifest') {
+    writeFileSync(
+      'dist/latest.json',
+      JSON.stringify(
+        updateManifest({
+          directory: 'dist',
+          version: process.env.RELEASE_VERSION,
+          repository: process.env.GITHUB_REPOSITORY,
+          tag: process.env.RELEASE_TAG,
+        }),
+        null,
+        2,
+      ) + '\n',
+    )
   } else {
-    throw new Error('Usage: node scripts/desktop-release.mjs version|collect')
+    throw new Error('Usage: node scripts/desktop-release.mjs version|collect|manifest')
   }
 }

@@ -153,6 +153,14 @@ downloadable Actions artifacts. Its **Release outcome** summary reports blocking
 gates. A successful ordinary **CI** run alone does not publish a release.
 Packages include license notices and platform-specific SHA-256 manifests.
 
+CI caches Rust dependencies and installed build tools per platform. The first
+build after a cache miss remains slow; later builds reuse compiled dependencies.
+macOS universal releases still compile for both Apple Silicon and Intel.
+
+Signed desktop releases check for updates at launch and offer **Install and
+restart** in the app. See [desktop updates](docs/desktop-updates.md) for supported
+installation formats and the required GitHub signing-key setup.
+
 The source version is maintained in the backend and desktop Cargo manifests and
 `src-tauri/tauri.conf.json`. Ask the user to approve a version bump for every change
 set, including documentation updates; never change it without their answer.

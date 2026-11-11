@@ -12,12 +12,48 @@ import {
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { execFileSync } from 'node:child_process'
-import { collect, selectPackage, releaseVersion } from './desktop-release.mjs'
+import { collect, selectPackage, releaseVersion, updateManifest } from './desktop-release.mjs'
 
 test('version numbers remain valid for Windows and consistent across platforms', () => {
   assert.equal(releaseVersion('0.1.0', '42'), '0.1.42')
   for (const value of ['', '0', '65536', 'NaN', '-1'])
     assert.throws(() => releaseVersion('0.1.0', value))
+})
+
+test('updater manifest requires all signed platforms and maps both macOS architectures', () => {
+  const directory = mkdtempSync(join(tmpdir(), 'dbsaur-updater-'))
+  const options = { directory, version: '0.1.42', repository: 'owner/repo', tag: 'main-42-1' }
+  try {
+    for (const name of ['DBsaur-setup.exe', 'DBsaur.msi', 'DBsaur.AppImage', 'DBsaur.app.tar.gz']) {
+      writeFileSync(join(directory, name), 'package')
+      writeFileSync(join(directory, `${name}.sig`), 'signed\n')
+    }
+    const manifest = updateManifest(options)
+    assert.equal(manifest.version, '0.1.42')
+    assert.deepEqual(Object.keys(manifest.platforms).sort(), [
+      'darwin-aarch64',
+      'darwin-x86_64',
+      'linux-x86_64',
+      'windows-x86_64',
+      'windows-x86_64-msi',
+      'windows-x86_64-nsis',
+    ])
+    assert.deepEqual(manifest.platforms['darwin-aarch64'], manifest.platforms['darwin-x86_64'])
+    assert.equal(
+      manifest.platforms['windows-x86_64'].url,
+      'https://github.com/owner/repo/releases/download/main-42-1/DBsaur-setup.exe',
+    )
+    assert.equal(manifest.platforms['windows-x86_64'].signature, 'signed')
+    writeFileSync(join(directory, 'DBsaur.AppImage.sig'), '')
+    assert.throws(() => updateManifest(options), /signature/)
+    rmSync(join(directory, 'DBsaur.AppImage.sig'))
+    assert.throws(() => updateManifest(options), /ENOENT/)
+    assert.throws(() => updateManifest({ ...options, version: 'invalid' }), /version/)
+    assert.throws(() => updateManifest({ ...options, repository: '../repo' }), /location/)
+  } finally {
+    assert.equal(join(directory, '..'), tmpdir())
+    rmSync(directory, { recursive: true, force: true })
+  }
 })
 
 for (const platform of ['windows-x64', 'linux-x64', 'macos-universal']) {
@@ -56,6 +92,19 @@ for (const platform of ['windows-x64', 'linux-x64', 'macos-universal']) {
           symlinkSync('dbsaur-desktop', join(executable, '..', 'launcher'))
         }
       }
+      const updateDirectory =
+        platform === 'windows-x64' ? 'nsis' : platform === 'linux-x64' ? 'appimage' : 'macos'
+      const updateName =
+        platform === 'windows-x64'
+          ? fixtures[0][1]
+          : platform === 'linux-x64'
+            ? fixtures[2][1]
+            : 'DBsaur.app.tar.gz'
+      const updater = join(release, 'bundle', updateDirectory, updateName)
+      if (platform === 'macos-universal') file(updater, 'signed archive must remain byte-identical')
+      file(`${updater}.sig`, 'signature')
+      if (platform === 'windows-x64')
+        file(join(release, 'bundle/msi', `${fixtures[1][1]}.sig`), 'signature')
       const assets = collect({ platform, version: '0.1.42', target, root })
       const manifest = readFileSync(
         join(root, 'dist/artifacts', `SHA256SUMS-${platform}.txt`),
@@ -78,6 +127,21 @@ for (const platform of ['windows-x64', 'linux-x64', 'macos-universal']) {
         )
         assert.ok(lstatSync(join(extracted, 'DBsaur.app/Contents/MacOS/launcher')).isSymbolicLink())
       }
+      const signedAssets = collect({ platform, version: '0.1.42', target, root, signed: true })
+      assert.ok(signedAssets.some((name) => name.endsWith('.sig')))
+      if (platform === 'macos-universal')
+        assert.equal(
+          readFileSync(
+            join(root, 'dist/artifacts/DBsaur_0.1.42_macos-universal.app.tar.gz'),
+            'utf8',
+          ),
+          'signed archive must remain byte-identical',
+        )
+      rmSync(`${updater}.sig`)
+      assert.throws(
+        () => collect({ platform, version: '0.1.42', target, root, signed: true }),
+        /ENOENT/,
+      )
       // A second package of the same format must fail rather than publish stale output.
       file(
         join(

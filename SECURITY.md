@@ -12,6 +12,21 @@ minimal reproduction with synthetic data. Maintainers review reports as time
 permits; there is no guaranteed response time or paid bug bounty. Please coordinate
 public disclosure while a report is investigated.
 
+## Desktop update trust
+
+Release builds check GitHub for updates on launch. Updates require explicit
+installation confirmation and a valid Tauri signature before installation.
+The release workflow uses an Actions private-key secret and embeds the public
+key in the application. Keep the key stable and backed up; see
+[desktop update setup](docs/desktop-updates.md). Unsigned local builds do not
+check for updates. GitHub receives the client's IP address during update checks
+and downloads; database contents and credentials are not included.
+
+Online audits were rerun after adding the updater: npm still reports 6 low and
+6 moderate findings, with no high/critical findings. All three Cargo lockfiles
+have no vulnerability findings; the desktop glib and proc-macro-error warnings
+remain visible. Native build and signed update verification are separate gates.
+
 ## Supported versions and threat model
 
 Security fixes target the latest default-branch code. No older release branch has

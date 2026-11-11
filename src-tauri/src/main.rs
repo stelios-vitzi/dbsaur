@@ -1,12 +1,14 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod server;
+mod updater;
 
 use std::{fs, io::Write, sync::Arc};
 use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
 
 fn main() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
             // A stable origin preserves saved SQL and UI preferences between launches.
             // Bind before showing the window; never reuse an unrelated local service.
@@ -54,6 +56,7 @@ fn main() {
             let router = tauri::async_runtime::block_on(async {
                 dbsaur::router_with_repository(false, Some(Arc::new(repository)))
             })
+            .merge(updater::routes(app.handle().clone()))
             .fallback(move |request: axum::extract::Request| {
                 let assets = assets.clone();
                 async move {

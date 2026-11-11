@@ -44,6 +44,7 @@ jobs:
       RELEASE_PLATFORM: ${{ matrix.platform }}
       RELEASE_TARGET: ${{ matrix.target }}
       RELEASE_BUNDLES: ${{ matrix.bundles }}
+      RELEASE_SIGNED: ${{ github.ref == 'refs/heads/main' && github.event_name != 'pull_request' }}
     outputs:
       version: ${{ steps.version.outputs.version }}
     steps:
@@ -67,7 +68,17 @@ jobs:
       - name: Install both macOS targets
         if: runner.os == 'macOS'
         run: rustup target add aarch64-apple-darwin x86_64-apple-darwin
-      - run: cargo install tauri-cli --locked --version 2.12.4
+      - name: Cache Rust dependencies and Tauri CLI
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          key: desktop-${{ matrix.platform }}-tauri-2.12.4
+          workspaces: src-tauri -> ../dist
+          save-if: ${{ github.ref == 'refs/heads/main' && github.event_name != 'pull_request' }}
+      - name: Install Tauri CLI on cache miss
+        run: |
+          if [[ "$(cargo tauri --version 2>/dev/null || true)" != 'tauri-cli 2.12.4' ]]; then
+            cargo install tauri-cli --locked --version 2.12.4 --force
+          fi
       - run: npm --prefix frontend ci
       - run: cargo fmt --manifest-path xtask/Cargo.toml --check
       - run: cargo fmt --manifest-path src-tauri/Cargo.toml --check
@@ -78,11 +89,15 @@ jobs:
       - run: npm test
       - name: Select installer version
         id: version
+        env:
+          TAURI_UPDATER_PUBLIC_KEY: ${{ vars.TAURI_UPDATER_PUBLIC_KEY }}
         run: node scripts/desktop-release.mjs version
       - name: Build native packages
         env:
           APPIMAGE_EXTRACT_AND_RUN: '1'
           NO_STRIP: 'true'
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: |
           args=(--ci --bundles "$RELEASE_BUNDLES" --config .artifacts/desktop-release.json)
           if [[ -n "$RELEASE_TARGET" ]]; then args+=(--target "$RELEASE_TARGET"); fi
@@ -125,7 +140,19 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - run: cargo install cargo-audit --locked --version 0.23.0
+      - name: Cache Rust audit tool
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          shared-key: cargo-audit-0.23.0
+          workspaces: xtask
+          cache-targets: 'false'
+          save-if: ${{ github.ref == 'refs/heads/main' && github.event_name != 'pull_request' }}
+      - name: Install cargo-audit on cache miss
+        shell: bash
+        run: |
+          if [[ "$(cargo audit --version 2>/dev/null || true)" != *' 0.23.0' ]]; then
+            cargo install cargo-audit --locked --version 0.23.0 --force
+          fi
       # RustSec advisories without a CVSS score must also block publication.
       - run: cargo audit --file "${{ matrix.lockfile }}"
 
@@ -137,6 +164,9 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           pattern: dbsaur-*
@@ -151,6 +181,7 @@ jobs:
         run: |
           set -euo pipefail
           tag="main-${GITHUB_RUN_NUMBER}-${GITHUB_RUN_ATTEMPT}"
+          RELEASE_TAG="$tag" node scripts/desktop-release.mjs manifest
           gh release create "$tag" dist/* --target "$GITHUB_SHA" \
             --title "DBsaur ${RELEASE_VERSION}" --generate-notes --draft
           gh release edit "$tag" --draft=false --latest
