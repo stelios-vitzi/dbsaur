@@ -152,3 +152,21 @@ npm run audit
 These are point-in-time checks for published advisories; they cannot detect
 vulnerabilities that have not been disclosed or added to advisory databases.
 Scans do not replace application security review or license review.
+
+## Experimental MongoDB boundary
+
+MongoDB connections are forced read only by the embedded API and the adapter exposes
+only ping, database/collection discovery, and find operations. No arbitrary commands,
+aggregation pipelines, or writes are accepted; recursive filter validation rejects
+server-side JavaScript operators. This does not replace server read-only privileges.
+Results use canonical Extended JSON to preserve BSON types and exact numbers. Reads
+have a 10-second deadline, a 1,001-document cursor limit (including the pagination
+sentinel), and an 8 MiB serialized-page budget. Large BSON documents can be received
+before that budget is checked. TLS validates server certificates and hostnames using
+public trust roots; custom CA/client certificates and SRV URIs are not supported yet.
+
+Online audits were rerun on 12 November 2026 for the MongoDB dependency graph:
+npm reports zero vulnerabilities and all three Cargo lockfiles have no vulnerability
+findings. The existing desktop glib unsoundness and proc-macro-error maintenance
+warnings remain visible. These results supersede the SQLite-era scans above.
+The unchanged native platform build gates remain required before release.

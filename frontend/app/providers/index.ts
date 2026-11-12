@@ -3,10 +3,11 @@ import postgres from './postgres/index.ts'
 import mysql from './mysql/index.ts'
 import mariadb from './mariadb/index.ts'
 import sqlserver from './sqlserver/index.ts'
+import mongodb from './mongodb/index.ts'
 
 export function providerOptions(provider: string) {
   return (
-    ({ postgres, mysql, mariadb, sqlserver, sqlite } as Record<string, typeof postgres>)[
+    ({ postgres, mysql, mariadb, sqlserver, sqlite, mongodb } as Record<string, typeof postgres>)[
       provider
     ] ?? postgres
   )

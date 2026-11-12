@@ -17,6 +17,8 @@ Saved SQL and interface preferences use the embedded webview's local storage.
 
 ## Database providers
 
+MongoDB is also available as an experimental read-only document provider; see [MongoDB](#mongodb-experimental).
+
 | Provider         | Default port | Browsing and SELECT queries | Instance discovery              | Editing and settings            |
 | ---------------- | ------------ | --------------------------- | ------------------------------- | ------------------------------- |
 | PostgreSQL       | 5432         | Yes                         | Yes, through postgres           | Yes                             |
@@ -163,3 +165,48 @@ session token. It exits with the native application. There is no standalone
 server, browser deployment, or multi-user hosting mode.
 
 See [SECURITY.md](../SECURITY.md) for vulnerability reporting, scope, and dated dependency scan results. A clean dependency scan cannot guarantee the absence of all vulnerabilities.
+
+## MongoDB (experimental)
+
+Choose **MongoDB (experimental)** to browse collections as documents. Enter a single
+host and port (default 27017), database, and optional username/password. Authentication
+uses **admin** unless you set **Authentication database**. Leave both credentials empty
+only for a server configured without authentication. URL import accepts single-host
+`mongodb://` URLs with `authSource` and `tls`/`ssl`; when omitted in an imported URL,
+the authentication database follows MongoDB's database-or-admin default. SRV URLs,
+multiple seed hosts, SSH tunnels, custom TLS certificates, and other URI options are
+not supported. Verified TLS uses trusted public certificate authorities.
+
+Select a collection in the explorer. **Filter**, **Sort**, and **Projection** accept JSON
+objects, not shell expressions or SQL. For example:
+
+```json
+{"status": "active", "amount": {"$gte": {"$numberLong": "9007199254740993"}}}
+```
+
+Sort uses `{"createdAt": -1}` for descending order; `_id` is appended as a stable tie
+breaker. Projection uses `{"name": 1}` to include fields, or `{"payload": 0}` to omit
+large fields. MongoDB's rules for combining inclusion/exclusion apply. Reset clears
+all three objects and browses the collection again. Expand a document to inspect
+nested objects and arrays. Results and page exports use canonical Extended JSON so
+ObjectIds, dates, decimals, binary values, and 64-bit integers retain their BSON types.
+Use Extended JSON for large query numbers too; plain unsafe JavaScript integers are
+rejected before submitting the filter.
+
+Connections are always read only. Inserts, updates, deletion, schema diagrams,
+aggregation pipelines, arbitrary commands, and server-side JavaScript are unavailable.
+Instance browsing lists databases accessible to your account and may require extra
+list-database permissions. Use a database account with read-only privileges.
+
+Each operation has a 10-second deadline. Pages allow up to 1,000 documents through
+the API (the document UI offers 25, 50, or 100) and at most 8 MiB of serialized
+Extended JSON. Offsets above 100,000 are rejected; narrow the filter instead. No exact
+collection count is requested. Concurrent changes can shift offset-based pages.
+Large individual BSON documents can still be received before the serialized-page
+limit is checked. This experimental provider has unit coverage; live tests require
+an explicitly configured disposable MongoDB database.
+
+The ignored integration test creates and removes a randomly named fixture collection:
+set `WEBDB_TEST_MONGODB_CONNECTION_JSON` to connection JSON for a disposable database,
+then run `cargo test --manifest-path backend/Cargo.toml --test mongodb -- --ignored`.
+The fixture account needs insert/drop privileges; application browsing itself remains read only.

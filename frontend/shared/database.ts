@@ -15,6 +15,7 @@ export interface ConnectionInput {
   tlsCa?: string
   tlsCert?: string
   tlsKey?: string
+  authSource?: string
   saveName?: string
 }
 export interface SavedConnection {

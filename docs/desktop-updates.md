@@ -67,7 +67,7 @@ Keep a secure backup. In the GitHub repository's Actions settings, configure:
 Never commit the private key or paste it into issues or logs. Keep the public key
 stable: changing it prevents existing installations from trusting new updates.
 The workflow embeds the public key in release builds and signs native updater
-artifacts. Main release builds fail when signing configuration is missing.
+artifacts. Version-tag release builds fail when signing configuration is missing.
 The **Validate release signing setup** job checks both key settings before any
 native build starts. A setup failure blocks publication and names the missing
 settings without printing key contents. It does not verify that the keys match;
@@ -84,10 +84,11 @@ Linux x64, and both architectures of the universal macOS app. The app reads
 Only newer versions are offered; draft releases are not offered. Manually
 published releases need the same complete manifest and correctly signed assets.
 The existing build matrix and all dependency audit gates still block publication.
-Native builds and publication run only when a push to `main` increases the source
-version in `src-tauri/tauri.conf.json`, compared with the version before that push.
-Other edits to that file skip builds; pull requests and manual dispatch do not
-trigger the desktop release workflow. CI and security workflow triggers are unchanged.
+Native builds and publication run only when a version tag matching `v<major>.<minor>.<patch>`
+is pushed, for example `git tag v0.2.0` followed by `git push origin v0.2.0`.
+The GitHub Release uses that existing tag. Branch pushes, pull requests, and manual
+dispatch do not trigger the desktop release workflow. CI checks and security audits
+keep their existing triggers; the CI frontend build runs only on version tags.
 Installer versions remain `<source-major>.<source-minor>.<run-number>`.
 
 Install the first release containing this updater manually. Older DBsaur

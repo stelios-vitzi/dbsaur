@@ -32,6 +32,7 @@ impl Fixture {
             tls_ca: None,
             tls_cert: None,
             tls_key: None,
+            auth_source: None,
         };
         Self { path, input }
     }

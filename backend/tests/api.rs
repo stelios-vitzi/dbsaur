@@ -357,6 +357,7 @@ async fn registry_advertises_real_database_providers() {
         [
             "demo",
             "mariadb",
+            "mongodb",
             "mysql",
             "postgres",
             "sqlite",

@@ -1,5 +1,7 @@
 # DBsaur
 
+Experimental MongoDB collection browsing is available alongside the SQL providers. See the [MongoDB guide](docs/user-guide.md#mongodb-experimental) for supported connections and JSON filters.
+
 A desktop database workspace for PostgreSQL, MySQL, MariaDB, SQL Server, and SQLite.
 Browse data, run queries, edit records, manage schemas, and preview PostGIS
 geometry from a single local application.
@@ -146,12 +148,11 @@ See [SECURITY.md](SECURITY.md) for current findings and vulnerability reporting.
 ## Releases and versioning
 
 The **Desktop build and release** workflow publishes a combined GitHub Release
-after all native builds and dependency audits pass, only when a push to `main`
-increases the source version in `src-tauri/tauri.conf.json`. Changes to that file
-without a version increase skip native builds and publication. The workflow does
-not run on pull requests or manual dispatch; ordinary CI and security audits keep
-their existing triggers. Its **Release outcome** summary reports blocking
-gates. A successful ordinary **CI** run alone does not publish a release.
+after all native builds and dependency audits pass, only when a version tag such
+as `v0.2.0` is pushed. Branch pushes, pull requests, and manual runs do not build
+packages. Ordinary CI checks and security audits keep their existing triggers;
+the CI frontend build runs only on version tags. Its **Release outcome** summary
+reports blocking gates. A successful ordinary **CI** run alone does not publish a release.
 Packages include license notices and platform-specific SHA-256 manifests.
 
 CI caches Rust dependencies and installed build tools per platform. The first
@@ -168,7 +169,7 @@ The source version is maintained in the backend and desktop Cargo manifests and
 set, including documentation updates; never change it without their answer.
 
 CI currently derives installer versions as `<source-major>.<source-minor>.<run-number>`
-and tags releases `main-<run-number>-<attempt>`. This generated build version is
+and publishes releases under the pushed version tag. This generated build version is
 separate from the approved source version. See [AGENTS.md](AGENTS.md) for project
 instructions and [CONTRIBUTING.md](CONTRIBUTING.md) for contribution guidance.
 

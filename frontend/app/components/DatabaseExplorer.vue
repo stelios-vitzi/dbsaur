@@ -11,6 +11,7 @@ const props = defineProps<{
   loading: boolean
   disabled: boolean
   canCreateTable: boolean
+  documentMode?: boolean
 }>()
 const emit = defineEmits<{
   choose: [database: string, table: TableInfo]
@@ -61,7 +62,11 @@ watch(
   <div class="explorer-toolbar">
     <label class="search-box table-search">
       <AppIcon name="search" :size="15" />
-      <input v-model="filter" placeholder="Find a table…" aria-label="Find a table" />
+      <input
+        v-model="filter"
+        :placeholder="documentMode ? 'Find a collection…' : 'Find a table…'"
+        :aria-label="documentMode ? 'Find a collection' : 'Find a table'"
+      />
     </label>
     <button
       v-if="canCreateTable"
@@ -83,8 +88,14 @@ watch(
       <AppIcon name="refresh" :size="14" />
     </button>
   </div>
-  <nav class="table-list database-tree" aria-label="Tables" :aria-busy="loading">
-    <p v-if="loading" class="sidebar-empty" role="status">Loading tables…</p>
+  <nav
+    class="table-list database-tree"
+    :aria-label="documentMode ? 'Collections' : 'Tables'"
+    :aria-busy="loading"
+  >
+    <p v-if="loading" class="sidebar-empty" role="status">
+      {{ documentMode ? 'Loading collections…' : 'Loading tables…' }}
+    </p>
     <template v-else>
       <section v-for="(schema, index) in schemas" :key="schema" class="schema-group">
         <button
@@ -122,7 +133,15 @@ watch(
         </div>
       </section>
       <p v-if="!filteredTables.length" class="sidebar-empty">
-        {{ filter.trim() ? 'No matching tables.' : 'No accessible tables found.' }}
+        {{
+          documentMode
+            ? filter.trim()
+              ? 'No matching collections.'
+              : 'No accessible collections found.'
+            : filter.trim()
+              ? 'No matching tables.'
+              : 'No accessible tables found.'
+        }}
       </p>
     </template>
   </nav>

@@ -6,6 +6,7 @@ const protocols: Record<string, { provider: string; port: number }> = {
   'mysql:': { provider: 'mysql', port: 3306 },
   'mariadb:': { provider: 'mariadb', port: 3306 },
   'sqlserver:': { provider: 'sqlserver', port: 1433 },
+  'mongodb:': { provider: 'mongodb', port: 27017 },
 }
 
 // Never include the supplied URL in errors: it can contain credentials.
@@ -19,7 +20,7 @@ export function parseConnectionUrl(value: string): ConnectionInput {
     const type = protocols[url.protocol]
     if (!type)
       throw new Error(
-        'Use a postgres://, postgresql://, mysql://, mariadb://, or sqlserver:// URL.',
+        'Use a postgres://, postgresql://, mysql://, mariadb://, sqlserver://, or mongodb:// URL. MongoDB SRV URLs are not supported yet.',
       )
     const host = url.hostname.replace(/^\[|\]$/g, '')
     const database = decodeURIComponent(url.pathname.replace(/^\//, ''))
@@ -28,7 +29,8 @@ export function parseConnectionUrl(value: string): ConnectionInput {
     const port = url.port ? Number(url.port) : type.port
     if (
       !host ||
-      !username.trim() ||
+      (!username.trim() && type.provider !== 'mongodb') ||
+      host.includes(',') ||
       database.includes('/') ||
       !Number.isInteger(port) ||
       port < 1 ||
@@ -41,9 +43,21 @@ export function parseConnectionUrl(value: string): ConnectionInput {
     )
       throw invalid()
     let ssl = false
+    let authSource: string | undefined
     let tlsSpecified = false
     for (const [key, setting] of url.searchParams) {
-      if (!['sslmode', 'ssl-mode', 'ssl', 'encrypt'].includes(key) || tlsSpecified) {
+      if (key === 'authSource' && type.provider === 'mongodb' && authSource === undefined) {
+        if (!setting || setting.length > 128 || /[\u0000-\u001f\u007f]/u.test(setting))
+          throw invalid()
+        authSource = setting
+        continue
+      }
+      if (
+        !(
+          type.provider === 'mongodb' ? ['tls', 'ssl'] : ['sslmode', 'ssl-mode', 'ssl', 'encrypt']
+        ).includes(key) ||
+        tlsSpecified
+      ) {
         throw new Error(
           'Unsupported or repeated URL option. Enter advanced settings in the form instead.',
         )
@@ -65,6 +79,9 @@ export function parseConnectionUrl(value: string): ConnectionInput {
       password,
       ssl,
       allDatabases: !database,
+      ...(type.provider === 'mongodb'
+        ? { authSource: authSource ?? (database || 'admin'), readOnly: true }
+        : {}),
     }
   } catch (cause) {
     if (cause instanceof TypeError || cause instanceof URIError) throw invalid()

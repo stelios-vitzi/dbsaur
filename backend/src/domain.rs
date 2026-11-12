@@ -154,10 +154,17 @@ pub struct ConnectionInput {
     pub tls_cert: Option<String>,
     #[serde(default)]
     pub tls_key: Option<String>,
+    #[serde(default)]
+    pub auth_source: Option<String>,
 }
 
 impl ConnectionInput {
     pub fn validate(&self) -> Result<(), &'static str> {
+        if self.auth_source.as_ref().is_some_and(|source| {
+            source.is_empty() || source.len() > 128 || source.chars().any(char::is_control)
+        }) {
+            return Err("Enter an authentication database of at most 128 characters.");
+        }
         let certificates = [&self.tls_ca, &self.tls_cert, &self.tls_key];
         if certificates.iter().any(|value| {
             value
@@ -221,7 +228,7 @@ impl ConnectionInput {
             return Err("Enter a port between 1 and 65535.");
         }
         if (!self.all_databases && self.database.trim().is_empty())
-            || self.username.trim().is_empty()
+            || (self.provider != "mongodb" && self.username.trim().is_empty())
             || self.database.len() > 128
             || self.username.len() > 128
             || self.password.len() > 4096

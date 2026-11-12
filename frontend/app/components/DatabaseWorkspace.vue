@@ -18,6 +18,7 @@ import DatabaseSettings from './DatabaseSettings.vue'
 import DataGrid from './DataGrid.vue'
 import MutationDialog from './MutationDialog.vue'
 import QueryEditor from './QueryEditor.vue'
+import MongoWorkspace from './MongoWorkspace.vue'
 import SchemaDiagram from './SchemaDiagram.vue'
 import SchemaTableEditor from './SchemaTableEditor.vue'
 import TableStructureDialog from './TableStructureDialog.vue'
@@ -120,10 +121,14 @@ function workspaceContext(event: MouseEvent) {
 function tableContext(event: MouseEvent, table: TableInfo) {
   const disabled = busy.value || switching.value
   const actions: ContextAction[] = [
-    { label: 'Browse table', disabled, run: () => workspaceTabs.openTable(table) },
+    {
+      label: session.value?.provider === 'mongodb' ? 'Browse collection' : 'Browse table',
+      disabled,
+      run: () => workspaceTabs.openTable(table),
+    },
     {
       label: 'View structure',
-      disabled,
+      disabled: disabled || session.value?.provider === 'mongodb',
       run: () => {
         structureTable.value = table
       },
@@ -138,10 +143,12 @@ function tableContext(event: MouseEvent, table: TableInfo) {
   if (activeView.value === workspaceTabs.key(table)) actions.push(...pageContextActions())
   actions.push(
     {
-      label: 'Copy table name',
+      label: session.value?.provider === 'mongodb' ? 'Copy collection name' : 'Copy table name',
       run: () =>
         copy(
-          `${quoteIdentifier(table.schema, session.value?.provider)}.${quoteIdentifier(table.name, session.value?.provider)}`,
+          session.value?.provider === 'mongodb'
+            ? table.name
+            : `${quoteIdentifier(table.schema, session.value?.provider)}.${quoteIdentifier(table.name, session.value?.provider)}`,
         ),
     },
     { label: 'Refresh explorer', disabled, run: db.refreshExplorer },
@@ -477,7 +484,12 @@ async function cellSaved() {
               { label: 'Reset explorer width', disabled: !session, run: sidebar.reset },
               {
                 label: 'Database diagram',
-                disabled: !session || connecting || switching || tablesLoading,
+                disabled:
+                  !session ||
+                  session.provider === 'mongodb' ||
+                  connecting ||
+                  switching ||
+                  tablesLoading,
                 run: () => {
                   schemaDiagramOpen = true
                 },
@@ -569,6 +581,7 @@ async function cellSaved() {
             </div>
             <div class="database-view-actions">
               <button
+                v-if="session.provider !== 'mongodb'"
                 class="button secondary small database-diagram-button"
                 title="Open database diagram"
                 aria-label="Open database diagram"
@@ -600,6 +613,7 @@ async function cellSaved() {
           :selected-table="selectedTable"
           :disabled="connecting || switching || busy || diagramMutationBusy"
           :can-create-table="schemaEditable"
+          :document-mode="session.provider === 'mongodb'"
           @choose="workspaceTabs.chooseDatabaseTable"
           @create-table="openDiagramTableEditor(null)"
           @refresh="db.refreshExplorer"
@@ -641,6 +655,21 @@ async function cellSaved() {
         @remove="db.deleteSavedConnection"
         @add="connectionDialog?.showModal()"
         @sample="connect(sampleConnection)"
+      />
+      <MongoWorkspace
+        v-else-if="session.provider === 'mongodb'"
+        :table="selectedTable"
+        :data="data"
+        :busy="busy || switching || connecting"
+        :error="error"
+        :page="page"
+        :page-size="pageSize"
+        :active-query="activeQuery"
+        @find="db.runQuery"
+        @refresh="selectedTable ? db.loadRows() : db.loadTables()"
+        @page="db.changePage"
+        @page-size="db.changePageSize"
+        @export="exportPage"
       />
       <main v-else class="database-main">
         <QueryEditor

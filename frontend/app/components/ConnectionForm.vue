@@ -70,11 +70,15 @@ const form = reactive<ConnectionInput>({
   readOnly: false,
 })
 const isSqlite = computed(() => form.provider === 'sqlite')
+const isMongo = computed(() => form.provider === 'mongodb')
 const options = computed(() => providerOptions(form.provider))
 watch(
   () => form.provider,
-  () => {
+  (_provider, previousProvider) => {
     form.port = options.value.port
+    if (isMongo.value) form.readOnly = true
+    else if (previousProvider === 'mongodb') form.readOnly = false
+    form.authSource = undefined
     if (isSqlite.value) {
       form.allDatabases = false
       form.ssl = false
@@ -306,7 +310,7 @@ async function readPem(event: Event, field: 'tlsCa' | 'tlsCert' | 'tlsKey') {
         <label
           >Username<input
             v-model="form.username"
-            required
+            :required="!isMongo"
             maxlength="128"
             autocomplete="username"
             :placeholder="options.username"
@@ -332,6 +336,20 @@ async function readPem(event: Event, field: 'tlsCa' | 'tlsCert' | 'tlsKey') {
           ></label
         >
       </div>
+      <template v-if="isMongo">
+        <label
+          >Authentication database<input
+            v-model.trim="form.authSource"
+            placeholder="admin"
+            maxlength="128"
+            @change="form.authSource ||= undefined"
+        /></label>
+        <p class="field-help">
+          Experimental · Read-only collection browsing. Leave username and password empty for
+          servers without authentication. Use a single host and port; SRV URLs and custom TLS
+          certificates are not supported yet.
+        </p>
+      </template>
       <div v-if="!isSqlite" class="connection-tls">
         <input
           v-model="form.ssl"
@@ -354,7 +372,9 @@ async function readPem(event: Event, field: 'tlsCa' | 'tlsCert' | 'tlsKey') {
         <div>
           <div class="connection-option">
             <label class="checkbox-label"
-              ><input v-model="form.readOnly" type="checkbox" /><span>Read-only mode</span></label
+              ><input v-model="form.readOnly" type="checkbox" :disabled="isMongo" /><span
+                >Read-only mode</span
+              ></label
             >
             <HelpTooltip
               label="About read-only mode"
@@ -482,7 +502,7 @@ async function readPem(event: Event, field: 'tlsCa' | 'tlsCert' | 'tlsKey') {
                 : 'TLS is disabled. Use only on a trusted local network.'
             }}
           </p>
-          <template v-if="form.ssl && form.provider !== 'sqlserver'">
+          <template v-if="form.ssl && !['sqlserver', 'mongodb'].includes(form.provider)">
             <div
               v-for="file in [
                 { field: 'tlsCa', label: 'CA certificate' },

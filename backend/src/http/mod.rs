@@ -186,6 +186,9 @@ fn ensure_writable(input: &ConnectionInput) -> AppResult<()> {
 }
 
 async fn test_input(state: &AppState, input: &mut ConnectionInput) -> AppResult<()> {
+    if input.provider == "mongodb" {
+        input.read_only = true;
+    }
     input.validate().map_err(invalid)?;
     let adapter = state.database.resolve(&input.provider)?;
     if input.all_databases {

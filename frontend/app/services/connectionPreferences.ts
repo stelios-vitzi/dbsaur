@@ -64,6 +64,7 @@ export async function connectionKey(input: ConnectionInput, savedId?: string) {
     input.host.trim().toLowerCase(),
     input.port,
     input.username,
+    ...(input.provider === 'mongodb' ? [input.authSource || 'admin'] : []),
   ])
   try {
     const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(identity))
