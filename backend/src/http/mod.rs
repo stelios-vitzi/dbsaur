@@ -99,6 +99,7 @@ pub(crate) fn router_with_services(
         )
         .route("/api/connections/{id}/connect", post(connect_saved))
         .route("/api/rows", get(rows))
+        .route("/api/indexes", get(indexes))
         .route("/api/query", post(query))
         .route(
             "/api/geometry",
@@ -480,3 +481,28 @@ async fn mutate(
 
 #[cfg(test)]
 mod tests;
+
+async fn indexes(
+    State(state): State<Shared>,
+    headers: HeaderMap,
+    Query(request): Query<BrowseQuery>,
+) -> AppResult<Json<Vec<IndexInfo>>> {
+    request.bounds().map_err(invalid)?;
+    let input = state.sessions.get(session_token(&headers))?;
+    let _permit = state
+        .operations
+        .try_acquire()
+        .map_err(|_| AppError(ErrorKind::Busy, "Too many requests. Try again shortly."))?;
+    Ok(Json(
+        tokio::time::timeout(
+            std::time::Duration::from_secs(15),
+            state.database.resolve(&input.provider)?.indexes(
+                &input,
+                &request.schema,
+                &request.table,
+            ),
+        )
+        .await
+        .map_err(|_| AppError(ErrorKind::Timeout, "Index details timed out."))??,
+    ))
+}

@@ -93,6 +93,12 @@ pub enum Mutation {
         schema: String,
         table: String,
     },
+    AlterIndex {
+        schema: String,
+        table: String,
+        expected: Option<IndexInfo>,
+        index: Option<IndexInfo>,
+    },
     AlterTableKeys {
         schema: String,
         table: String,
@@ -409,4 +415,13 @@ impl BrowseQuery {
         }
         Ok((page, size))
     }
+}
+
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct IndexInfo {
+    pub name: String,
+    pub columns: Vec<String>,
+    pub unique: bool,
+    pub editable: bool,
 }

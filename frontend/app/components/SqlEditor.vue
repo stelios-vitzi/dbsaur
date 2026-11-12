@@ -81,7 +81,6 @@ onMounted(() => {
         EditorView.contentAttributes.of({
           id: 'sql-editor',
           'aria-label': 'SQL query',
-          'aria-describedby': 'query-help',
           spellcheck: 'false',
           autocapitalize: 'off',
           autocomplete: 'off',

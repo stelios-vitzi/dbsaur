@@ -126,6 +126,7 @@ pub(crate) async fn mutate(
     input: &ConnectionInput,
     mutation: &Mutation,
 ) -> AppResult<MutationResult> {
+    super::super::write::check_index(&super::MySqlAdapter, input, mutation).await?;
     if let Mutation::AlterColumn {
         schema,
         table,
@@ -193,6 +194,28 @@ pub(crate) async fn mutate(
             }
         );
         execute(&mut connection, &sql).await?;
+        return Ok(MutationResult { affected_rows: 0 });
+    }
+    if let Mutation::AlterIndex {
+        schema,
+        table,
+        expected,
+        index,
+    } = mutation
+    {
+        let statements = super::super::write::index_statements(
+            &input.provider,
+            schema,
+            table,
+            expected.as_ref(),
+            index.as_ref(),
+            64,
+            quote_identifier,
+        )?;
+        let mut connection = connect_mode(input, false).await?;
+        for sql in statements {
+            execute(&mut connection, &sql).await?;
+        }
         return Ok(MutationResult { affected_rows: 0 });
     }
     if let Mutation::Execute { sql } = mutation {

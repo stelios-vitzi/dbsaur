@@ -3,6 +3,7 @@ import { ref, computed, onMounted, onScopeDispose, useTemplateRef } from 'vue'
 import { useActionFeedback } from '../composables/useToast'
 import AppIcon from './AppIcon.vue'
 import ColumnEditor from './ColumnEditor.vue'
+import TableIndexes from './TableIndexes.vue'
 import { $fetch } from '../services/http'
 
 import { DatabaseChangeCancelled } from '../utils/databaseChange'
@@ -139,7 +140,9 @@ const keyColumns = computed(() => [
     ...fields.value.map((field) => field.name.trim()).filter((name) => validIdentifier(name)),
   ]),
 ])
-const saving = ref(false)
+const indexSaving = ref(false)
+const savingColumns = ref(false)
+const saving = computed(() => savingColumns.value || indexSaving.value)
 const error = ref('')
 useActionFeedback(error)
 const target = computed(
@@ -375,7 +378,7 @@ function renameField(field: NewField) {
 }
 async function save() {
   if (!canSave.value) return
-  saving.value = true
+  savingColumns.value = true
   error.value = ''
   try {
     if (!props.table) {
@@ -410,7 +413,7 @@ async function save() {
     }
     error.value = cause instanceof Error ? cause.message : 'Could not apply the table changes.'
   } finally {
-    saving.value = false
+    savingColumns.value = false
   }
 }
 onMounted(() => {
@@ -598,6 +601,15 @@ onMounted(() => {
             </div>
           </section>
         </div>
+        <TableIndexes
+          v-if="table"
+          :table="table"
+          :provider="provider"
+          :disabled="savingColumns || fields.length > 0 || !!pendingKeyMutation || !!editingColumn"
+          :apply="apply"
+          @busy="indexSaving = $event"
+          @saved="emit('saved')"
+        />
         <section class="schema-new-fields" aria-label="Fields to add">
           <div class="schema-section-heading">
             <h3>

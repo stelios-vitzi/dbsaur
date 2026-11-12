@@ -391,6 +391,15 @@ pub(crate) async fn query(input: &ConnectionInput, query: &SqlQuery) -> AppResul
 }
 #[async_trait]
 impl DatabaseAdapter for MySqlAdapter {
+    async fn indexes(
+        &self,
+        input: &ConnectionInput,
+        schema: &str,
+        table: &str,
+    ) -> AppResult<Vec<IndexInfo>> {
+        super::read_query::bounded(indexes(input, schema, table)).await
+    }
+
     async fn mutate(
         &self,
         input: &ConnectionInput,
@@ -502,6 +511,51 @@ async fn metadata(
         .collect::<Result<Vec<_>, sqlx::Error>>()?;
 
     Ok(columns)
+}
+
+pub(crate) async fn indexes(
+    input: &ConnectionInput,
+    schema: &str,
+    table: &str,
+) -> AppResult<Vec<IndexInfo>> {
+    let mut c = connect(input).await?;
+    let visibility = if input.provider == "mariadb" {
+        "IGNORED='NO'"
+    } else {
+        "IS_VISIBLE='YES'"
+    };
+    let sql = format!(
+        "SELECT INDEX_NAME,COLUMN_NAME,NON_UNIQUE,INDEX_TYPE,SUB_PART,COLLATION,INDEX_COMMENT,({visibility}) AS visible FROM information_schema.STATISTICS WHERE TABLE_SCHEMA=? AND TABLE_NAME=? ORDER BY INDEX_NAME,SEQ_IN_INDEX"
+    );
+    let rows = sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
+        .bind(schema)
+        .bind(table)
+        .fetch_all(&mut c)
+        .await?;
+    let mut indexes = BTreeMap::<String, IndexInfo>::new();
+    for r in rows {
+        let name: String = r.try_get("INDEX_NAME")?;
+        let column: Option<String> = r.try_get("COLUMN_NAME")?;
+        let editable = r.try_get::<i64, _>("visible")? == 1
+            && name != "PRIMARY"
+            && column.is_some()
+            && r.try_get::<String, _>("INDEX_TYPE")? == "BTREE"
+            && r.try_get::<Option<i64>, _>("SUB_PART")?.is_none()
+            && r.try_get::<Option<String>, _>("COLLATION")?.as_deref() == Some("A")
+            && r.try_get::<String, _>("INDEX_COMMENT")?.is_empty();
+        let unique = r.try_get::<i64, _>("NON_UNIQUE")? == 0;
+        let index = indexes.entry(name.clone()).or_insert(IndexInfo {
+            name,
+            columns: vec![],
+            unique,
+            editable,
+        });
+        index.editable &= editable;
+        index
+            .columns
+            .push(column.unwrap_or_else(|| "(expression)".into()));
+    }
+    Ok(indexes.into_values().collect())
 }
 
 #[cfg(test)]

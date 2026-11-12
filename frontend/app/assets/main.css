@@ -1780,33 +1780,6 @@ kbd {
 .sql-tooltip-layer .cm-tooltip {
   pointer-events: auto;
 }
-.query-help {
-  position: relative;
-}
-.query-help-tooltip {
-  display: none;
-  position: absolute;
-  top: 100%;
-  right: 0;
-  z-index: 8;
-  width: 350px;
-  max-width: calc(100vw - 32px);
-  padding: 12px;
-  border: 1px solid var(--raised);
-  border-radius: 6px;
-  background: var(--surface);
-  color: var(--secondary);
-  box-shadow: 0 6px 18px #0004;
-  font-size: var(--text-body);
-  line-height: 1.6;
-}
-.query-help-tooltip span {
-  display: block;
-}
-.query-help:hover .query-help-tooltip,
-.query-help:focus-within .query-help-tooltip {
-  display: block;
-}
 .query-resize {
   position: absolute;
   bottom: -6px;
@@ -4120,4 +4093,15 @@ textarea:focus-visible {
     text-overflow: ellipsis;
     white-space: nowrap;
   }
+}
+
+.page-jump {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.page-jump input {
+  width: 76px;
+  padding: 3px 6px;
+  font-size: var(--text-sm);
 }

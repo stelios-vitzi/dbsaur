@@ -91,6 +91,7 @@ pub(super) async fn mutate(
     input: &ConnectionInput,
     mutation: &Mutation,
 ) -> AppResult<MutationResult> {
+    super::super::write::check_index(&super::SqlServerAdapter, input, mutation).await?;
     if let Mutation::CreateDatabase { name } | Mutation::DropDatabase { name } = mutation {
         if !input.all_databases {
             return Err(invalid(
@@ -155,6 +156,26 @@ async fn apply(
     mutation: &Mutation,
     statement: Option<String>,
 ) -> AppResult<u64> {
+    if let Mutation::AlterIndex {
+        schema,
+        table,
+        expected,
+        index,
+    } = mutation
+    {
+        for sql in super::super::write::index_statements(
+            "sqlserver",
+            schema,
+            table,
+            expected.as_ref(),
+            index.as_ref(),
+            128,
+            quote_identifier,
+        )? {
+            command(client, &sql).await?;
+        }
+        return Ok(0);
+    }
     if let Mutation::AlterColumn {
         schema,
         table,

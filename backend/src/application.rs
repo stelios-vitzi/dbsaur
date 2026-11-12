@@ -23,6 +23,15 @@ pub fn invalid(message: &'static str) -> AppError {
 /// Provider boundary: keep browsing read only, bound request cost, and replace
 /// driver details with safe errors. Database privileges remain the security boundary.
 pub trait DatabaseAdapter: Send + Sync {
+    async fn indexes(
+        &self,
+        _input: &ConnectionInput,
+        _schema: &str,
+        _table: &str,
+    ) -> AppResult<Vec<IndexInfo>> {
+        Err(invalid("Index details are unavailable for this provider."))
+    }
+
     async fn geometry(
         &self,
         _input: &ConnectionInput,

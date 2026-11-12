@@ -7,6 +7,7 @@ import { useSidebarResize } from '../composables/useSidebarResize'
 import AppIcon from './AppIcon.vue'
 import AppMenuBar from './AppMenuBar.vue'
 import AboutDialog from './AboutDialog.vue'
+import ShortcutsDialog from './ShortcutsDialog.vue'
 import CellEditor from './CellEditor.vue'
 import ConnectionForm from './ConnectionForm.vue'
 import ContextMenu from './ContextMenu.vue'
@@ -79,6 +80,7 @@ const recordEditable = computed(
 const toast = useToast()
 const settingsOpen = ref(false)
 const aboutOpen = ref(false)
+const shortcutsOpen = ref(false)
 const schemaDiagramOpen = ref(false)
 const context = shallowRef<{
   x: number
@@ -387,6 +389,24 @@ const totalPages = computed(() => {
   const count = (total + BigInt(pageSize.value) - 1n) / BigInt(pageSize.value)
   return (count || 1n).toLocaleString()
 })
+const jumpPage = ref('')
+const maxJumpPage = computed(() => {
+  if (data.value?.totalRows == null) return 100001
+  const count =
+    (BigInt(data.value.totalRows) + BigInt(pageSize.value) - 1n) / BigInt(pageSize.value)
+  return Number(count > 100001n ? 100001n : count || 1n)
+})
+const jumpValid = computed(
+  () =>
+    /^\d+$/.test(jumpPage.value) &&
+    Number(jumpPage.value) >= 1 &&
+    Number(jumpPage.value) <= maxJumpPage.value,
+)
+async function goToPage() {
+  if (!jumpValid.value || busy.value) return
+  await db.changePage(Number(jumpPage.value) - 1)
+  jumpPage.value = ''
+}
 watch([data, busy, switching], () => {
   context.value = null
 })
@@ -473,6 +493,12 @@ async function cellSaved() {
             label: 'Help',
             actions: [
               {
+                label: 'Keyboard shortcuts',
+                run: () => {
+                  shortcutsOpen = true
+                },
+              },
+              {
                 label: 'About DBsaur…',
                 run: () => {
                   aboutOpen = true
@@ -497,6 +523,7 @@ async function cellSaved() {
         </button>
       </div>
     </header>
+    <ShortcutsDialog v-if="shortcutsOpen" @close="shortcutsOpen = false" />
     <AboutDialog v-if="aboutOpen" @close="aboutOpen = false" />
     <div
       class="app-body"
@@ -752,7 +779,23 @@ async function cellSaved() {
               <AppIcon name="chevron" :size="15" /></button
             ><span class="page-number" aria-live="polite"
               >Page {{ page + 1 }}<template v-if="totalPages"> of {{ totalPages }}</template></span
-            ><button
+            >
+            <form class="page-jump" @submit.prevent="goToPage">
+              <input
+                v-model="jumpPage"
+                type="number"
+                min="1"
+                :max="maxJumpPage"
+                step="1"
+                aria-label="Go to page"
+                placeholder="Page"
+                :disabled="busy"
+              />
+              <button class="button secondary small" type="submit" :disabled="busy || !jumpValid">
+                Go
+              </button>
+            </form>
+            <button
               class="icon-button"
               title="Next page"
               aria-label="Next page"

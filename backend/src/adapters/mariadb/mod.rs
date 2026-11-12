@@ -6,6 +6,15 @@ use async_trait::async_trait;
 pub struct MariaDbAdapter;
 #[async_trait]
 impl DatabaseAdapter for MariaDbAdapter {
+    async fn indexes(
+        &self,
+        input: &ConnectionInput,
+        schema: &str,
+        table: &str,
+    ) -> AppResult<Vec<IndexInfo>> {
+        super::read_query::bounded(mysql::indexes(input, schema, table)).await
+    }
+
     async fn mutate(
         &self,
         input: &ConnectionInput,

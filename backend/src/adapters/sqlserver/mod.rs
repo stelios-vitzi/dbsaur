@@ -212,6 +212,26 @@ async fn page(
 }
 #[async_trait]
 impl DatabaseAdapter for SqlServerAdapter {
+    async fn indexes(
+        &self,
+        input: &ConnectionInput,
+        schema: &str,
+        table: &str,
+    ) -> AppResult<Vec<IndexInfo>> {
+        super::read_query::bounded(async {
+            let mut c = connect(input).await?;
+            let rows = c.query("SELECT i.name AS name, col.name AS column_name, i.is_unique, CAST(CASE WHEN i.type=2 AND i.is_primary_key=0 AND i.is_unique_constraint=0 AND i.has_filter=0 AND i.is_disabled=0 AND i.is_hypothetical=0 AND i.fill_factor=0 AND i.is_padded=0 AND i.ignore_dup_key=0 AND i.allow_row_locks=1 AND i.allow_page_locks=1 AND EXISTS(SELECT 1 FROM sys.filegroups fg WHERE fg.data_space_id=i.data_space_id AND fg.is_default=1) AND NOT EXISTS(SELECT 1 FROM sys.index_columns x WHERE x.object_id=i.object_id AND x.index_id=i.index_id AND (x.is_included_column=1 OR x.is_descending_key=1)) AND NOT EXISTS(SELECT 1 FROM sys.partitions p WHERE p.object_id=i.object_id AND p.index_id=i.index_id AND p.data_compression<>0) THEN 1 ELSE 0 END AS bit) AS editable FROM sys.indexes i JOIN sys.tables t ON t.object_id=i.object_id JOIN sys.schemas s ON s.schema_id=t.schema_id JOIN sys.index_columns ic ON ic.object_id=i.object_id AND ic.index_id=i.index_id JOIN sys.columns col ON col.object_id=ic.object_id AND col.column_id=ic.column_id WHERE s.name=@P1 AND t.name=@P2 AND i.index_id>0 ORDER BY i.name,ic.key_ordinal,ic.index_column_id", &[&schema,&table]).await.map_err(driver_error)?.into_first_result().await.map_err(driver_error)?;
+            let mut indexes = BTreeMap::<String, IndexInfo>::new();
+            for r in rows {
+                let name = text(&r,"name")?;
+                let editable = r.try_get::<bool,_>("editable").map_err(driver_error)?.unwrap_or(false);
+                let unique = r.try_get::<bool,_>("is_unique").map_err(driver_error)?.unwrap_or(false);
+                indexes.entry(name.clone()).or_insert(IndexInfo { name, columns: vec![], unique, editable }).columns.push(text(&r,"column_name")?);
+            }
+            Ok(indexes.into_values().collect())
+        }).await
+    }
+
     async fn mutate(
         &self,
         input: &ConnectionInput,

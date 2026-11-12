@@ -105,7 +105,21 @@ export interface TablePage {
   } | null
 }
 
+export interface IndexInfo {
+  name: string
+  columns: string[]
+  unique: boolean
+  editable: boolean
+}
+
 export type Mutation =
+  | {
+      action: 'alterIndex'
+      schema: string
+      table: string
+      expected: IndexInfo | null
+      index: IndexInfo | null
+    }
   | {
       action: 'alterColumn'
       schema: string

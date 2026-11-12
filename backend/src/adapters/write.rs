@@ -446,3 +446,229 @@ mod tests {
         assert!(validate_key_drops(None, &["foreign_key".into()], &keys).is_err());
     }
 }
+
+pub async fn check_index(
+    adapter: &dyn DatabaseAdapter,
+    input: &ConnectionInput,
+    mutation: &Mutation,
+) -> AppResult<()> {
+    if let Mutation::AlterIndex {
+        schema,
+        table,
+        expected: Some(expected),
+        ..
+    } = mutation
+    {
+        let current = adapter.indexes(input, schema, table).await?;
+        if !expected.editable || !current.iter().any(|i| i == expected) {
+            return Err(invalid(
+                "The index changed or cannot be edited here. Refresh before retrying.",
+            ));
+        }
+    }
+    Ok(())
+}
+
+pub fn index_statements(
+    provider: &str,
+    schema: &str,
+    table: &str,
+    expected: Option<&IndexInfo>,
+    index: Option<&IndexInfo>,
+    maximum: usize,
+    quote: fn(&str) -> String,
+) -> AppResult<Vec<String>> {
+    if expected.is_none() && index.is_none() {
+        return Err(invalid("Choose an index change."));
+    }
+    if expected.is_some_and(|i| !i.editable) {
+        return Err(invalid(
+            "This index must be managed with SQL or key constraints.",
+        ));
+    }
+    let schema = identifier(schema, maximum, quote)?;
+    let target = format!("{schema}.{}", identifier(table, maximum, quote)?);
+    let mysql = matches!(provider, "mysql" | "mariadb");
+    let mut statements = vec![];
+    if let Some(old) = expected {
+        let name = identifier(&old.name, maximum, quote)?;
+        statements.push(if mysql {
+            format!("DROP INDEX {name}")
+        } else if provider == "postgres" {
+            format!("DROP INDEX {schema}.{name}")
+        } else {
+            format!("DROP INDEX {name} ON {target}")
+        });
+    }
+    if let Some(index) = index {
+        if index.columns.is_empty() || index.columns.len() > 32 {
+            return Err(invalid("Select between 1 and 32 index columns."));
+        }
+        let mut seen = std::collections::HashSet::new();
+        let columns = index
+            .columns
+            .iter()
+            .map(|c| {
+                let key = if provider == "postgres" {
+                    c.clone()
+                } else {
+                    c.to_lowercase()
+                };
+                if !seen.insert(key) {
+                    return Err(invalid("Index columns must be distinct."));
+                }
+                identifier(c, maximum, quote)
+            })
+            .collect::<AppResult<Vec<_>>>()?
+            .join(", ");
+        let name = identifier(&index.name, maximum, quote)?;
+        let unique = if index.unique { "UNIQUE " } else { "" };
+        statements.push(if mysql {
+            format!("ADD {unique}INDEX {name} ({columns})")
+        } else {
+            format!("CREATE {unique}INDEX {name} ON {target} ({columns})")
+        });
+    }
+    if mysql {
+        Ok(vec![format!(
+            "ALTER TABLE {target} {}",
+            statements.join(", ")
+        )])
+    } else {
+        Ok(statements)
+    }
+}
+
+#[cfg(test)]
+mod index_tests {
+    use super::*;
+
+    fn index(name: &str, columns: &[&str]) -> IndexInfo {
+        IndexInfo {
+            name: name.into(),
+            columns: columns.iter().map(|c| (*c).into()).collect(),
+            unique: true,
+            editable: true,
+        }
+    }
+
+    #[test]
+    fn mysql_replacement_is_one_atomic_alter_with_ordered_quoted_columns() {
+        let old = index("old`index", &["a"]);
+        let new = index("new`index", &["b`", "a"]);
+        let plan = index_statements(
+            "mysql",
+            "db",
+            "t",
+            Some(&old),
+            Some(&new),
+            64,
+            super::super::mysql::quote_identifier,
+        )
+        .unwrap();
+        assert_eq!(
+            plan,
+            [
+                "ALTER TABLE `db`.`t` DROP INDEX `old``index`, ADD UNIQUE INDEX `new``index` (`b```, `a`)"
+            ]
+        );
+    }
+
+    #[test]
+    fn postgres_drop_is_schema_qualified_and_replacement_preserves_order() {
+        let old = index("old", &["a"]);
+        let new = index("new", &["b", "a"]);
+        let plan = index_statements(
+            "postgres",
+            "s\"",
+            "t",
+            Some(&old),
+            Some(&new),
+            63,
+            super::super::postgres::quote_identifier,
+        )
+        .unwrap();
+        assert_eq!(
+            plan,
+            [
+                "DROP INDEX \"s\"\"\".\"old\"",
+                "CREATE UNIQUE INDEX \"new\" ON \"s\"\"\".\"t\" (\"b\", \"a\")"
+            ]
+        );
+    }
+
+    #[test]
+    fn sql_server_drop_targets_the_table() {
+        let old = index("i]", &["a"]);
+        let plan = index_statements(
+            "sqlserver",
+            "dbo",
+            "t]",
+            Some(&old),
+            None,
+            128,
+            super::super::sqlserver::quote_identifier,
+        )
+        .unwrap();
+        assert_eq!(plan, ["DROP INDEX [i]]] ON [dbo].[t]]]"]);
+    }
+
+    #[test]
+    fn invalid_and_protected_indexes_are_rejected() {
+        let quote = super::super::mysql::quote_identifier;
+        for columns in [vec![], vec!["a", "A"], vec!["a"; 33]] {
+            assert!(
+                index_statements(
+                    "mysql",
+                    "db",
+                    "t",
+                    None,
+                    Some(&index("i", &columns)),
+                    64,
+                    quote
+                )
+                .is_err()
+            );
+        }
+        let mut protected = index("pk", &["a"]);
+        protected.editable = false;
+        assert!(index_statements("mysql", "db", "t", Some(&protected), None, 64, quote).is_err());
+        assert!(index_statements("mysql", "db", "t", None, None, 64, quote).is_err());
+        assert!(
+            index_statements(
+                "mysql",
+                "db",
+                "t",
+                None,
+                Some(&index("bad\nname", &["a"])),
+                64,
+                quote
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn generated_mysql_and_sql_server_index_sql_passes_the_dialect_parser() {
+        for (provider, quote, dialect) in [
+            (
+                "mysql",
+                super::super::mysql::quote_identifier as fn(&str) -> String,
+                &sqlparser::dialect::MySqlDialect {} as &dyn Dialect,
+            ),
+            (
+                "sqlserver",
+                super::super::sqlserver::quote_identifier as fn(&str) -> String,
+                &sqlparser::dialect::MsSqlDialect {} as &dyn Dialect,
+            ),
+        ] {
+            let old = index("old", &["a"]);
+            let new = index("new", &["b", "a"]);
+            for sql in
+                index_statements(provider, "s", "t", Some(&old), Some(&new), 64, quote).unwrap()
+            {
+                assert!(statement(&sql, dialect).is_ok(), "{sql}");
+            }
+        }
+    }
+}

@@ -64,6 +64,7 @@ pub(super) async fn mutate(
     input: &ConnectionInput,
     mutation: &Mutation,
 ) -> AppResult<MutationResult> {
+    super::super::write::check_index(&super::PostgresAdapter, input, mutation).await?;
     // Database DDL cannot run inside a transaction. Never force-disconnect clients.
     if let Mutation::CreateDatabase { name } | Mutation::DropDatabase { name } = mutation {
         if !input.all_databases {
@@ -107,6 +108,28 @@ pub(super) async fn mutate(
         .execute(&mut *tx)
         .await?;
     let affected_rows = match mutation {
+        Mutation::AlterIndex {
+            schema,
+            table,
+            expected,
+            index,
+        } => {
+            for sql in super::super::write::index_statements(
+                "postgres",
+                schema,
+                table,
+                expected.as_ref(),
+                index.as_ref(),
+                63,
+                quote_identifier,
+            )? {
+                sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
+                    .execute(&mut *tx)
+                    .await
+                    .map_err(write_error)?;
+            }
+            0
+        }
         Mutation::AlterColumn {
             schema,
             table,

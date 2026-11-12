@@ -152,6 +152,21 @@ async fn begin(connection: &mut PgConnection) -> AppResult<sqlx::Transaction<'_,
 
 #[async_trait]
 impl DatabaseAdapter for PostgresAdapter {
+    async fn indexes(
+        &self,
+        input: &ConnectionInput,
+        schema: &str,
+        table: &str,
+    ) -> AppResult<Vec<IndexInfo>> {
+        super::read_query::bounded(async {
+            let mut c = connect(input).await?;
+            let mut tx = begin(&mut c).await?;
+            let rows = sqlx::query("SELECT ci.relname AS name, i.indisunique AS is_unique, ARRAY(SELECT a.attname::text FROM unnest(i.indkey) WITH ORDINALITY k(attnum, ord) LEFT JOIN pg_attribute a ON a.attrelid=t.oid AND a.attnum=k.attnum ORDER BY k.ord) AS columns, (NOT i.indisprimary AND NOT EXISTS(SELECT 1 FROM pg_constraint WHERE conindid=i.indexrelid) AND i.indpred IS NULL AND i.indexprs IS NULL AND i.indnatts=i.indnkeyatts AND am.amname='btree' AND i.indisvalid AND NOT EXISTS(SELECT 1 FROM unnest(i.indcollation) WITH ORDINALITY co(coll,ord) JOIN unnest(i.indkey) WITH ORDINALITY k(attnum,ord) USING(ord) JOIN pg_attribute a ON a.attrelid=t.oid AND a.attnum=k.attnum WHERE co.coll<>a.attcollation) AND ci.reloptions IS NULL AND ci.reltablespace=0 AND NOT EXISTS(SELECT 1 FROM unnest(i.indoption) o WHERE o<>0) AND NOT EXISTS(SELECT 1 FROM unnest(i.indclass) op JOIN pg_opclass oc ON oc.oid=op WHERE NOT oc.opcdefault)) AS editable FROM pg_index i JOIN pg_class t ON t.oid=i.indrelid JOIN pg_namespace n ON n.oid=t.relnamespace JOIN pg_class ci ON ci.oid=i.indexrelid JOIN pg_am am ON am.oid=ci.relam WHERE n.nspname=$1 AND t.relname=$2 ORDER BY ci.relname")
+                .bind(schema).bind(table).fetch_all(&mut *tx).await?;
+            rows.into_iter().map(|r| Ok(IndexInfo { name: r.try_get("name")?, columns: r.try_get::<Vec<Option<String>>, _>("columns")?.into_iter().map(|c| c.unwrap_or_else(|| "(expression)".into())).collect(), unique: r.try_get("is_unique")?, editable: r.try_get("editable")? })).collect()
+        }).await
+    }
+
     async fn geometry(
         &self,
         input: &ConnectionInput,

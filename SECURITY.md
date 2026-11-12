@@ -60,6 +60,10 @@ Tauri application. There is no standalone server or multi-user deployment mode.
   encrypted vault. Restrict its directory and keep the key separate from backups.
   Saved SQL, exports, clipboard contents, webview caches, OS memory/dumps,
   and database logs need their own protection.
+- Index edits compare the displayed metadata before opening the write operation.
+  Concurrent schema changes after that check remain possible. PostgreSQL and SQL
+  Server replace indexes in a transaction; MySQL/MariaDB use one ALTER TABLE.
+  Advanced indexes remain read only in the schema editor to preserve their options.
 - Pagination limits rows, not bytes. Large values and expensive queries can still
   consume memory and database resources. This is not a hostile multi-tenant service.
 - Editable single-table query results include hidden source-record snapshots in the

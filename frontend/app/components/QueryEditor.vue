@@ -412,20 +412,6 @@ function run() {
         >
           <AppIcon name="play" :size="12" />{{ busy ? 'Running…' : 'Run' }}
         </button>
-        <div class="query-help">
-          <button
-            class="icon-button"
-            type="button"
-            aria-label="Query help and keyboard shortcuts"
-            aria-describedby="query-help"
-          >
-            <span aria-hidden="true">?</span>
-          </button>
-          <div id="query-help" class="query-help-tooltip" role="tooltip">
-            <span>Read only · Ctrl / ⌘ + Enter to run</span>
-            <span>Ctrl + Space: suggest · Tab / Enter: accept · Esc: dismiss</span>
-          </div>
-        </div>
       </div>
     </div>
     <div id="query-panel" class="query-panel" role="tabpanel" :aria-labelledby="`${activeId}-tab`">
