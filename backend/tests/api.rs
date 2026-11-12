@@ -262,7 +262,15 @@ async fn session_browsing_validation_and_disconnect() {
             false,
         ),
         (
-            "SELECT name FROM customers",
+            "SELECT name FROM customers WHERE name ILIKE 'amelia%' AND email IS NOT NULL",
+            0,
+            5,
+            StatusCode::OK,
+            5,
+            true,
+        ),
+        (
+            "SELECT * FROM generate_series(1, 3)",
             0,
             5,
             StatusCode::BAD_REQUEST,

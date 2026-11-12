@@ -464,7 +464,7 @@ function run() {
       <span v-if="activeQuery && sql.trim() !== activeQuery"
         >Query changed · Run to update results</span
       >
-      <span v-else-if="demo">Sample: SELECT * FROM a table, with optional LIMIT</span>
+      <span v-else-if="demo">Sample data: read-only SELECT queries on a SQLite copy</span>
     </div>
     <div
       class="query-resize"
