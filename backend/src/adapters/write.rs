@@ -494,7 +494,7 @@ pub fn index_statements(
         let name = identifier(&old.name, maximum, quote)?;
         statements.push(if mysql {
             format!("DROP INDEX {name}")
-        } else if provider == "postgres" {
+        } else if provider == "postgres" || provider == "sqlite" {
             format!("DROP INDEX {schema}.{name}")
         } else {
             format!("DROP INDEX {name} ON {target}")
@@ -525,6 +525,11 @@ pub fn index_statements(
         let unique = if index.unique { "UNIQUE " } else { "" };
         statements.push(if mysql {
             format!("ADD {unique}INDEX {name} ({columns})")
+        } else if provider == "sqlite" {
+            format!(
+                "CREATE {unique}INDEX {schema}.{name} ON {} ({columns})",
+                identifier(table, maximum, quote)?
+            )
         } else {
             format!("CREATE {unique}INDEX {name} ON {target} ({columns})")
         });

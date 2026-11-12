@@ -6,6 +6,7 @@ pub mod postgres;
 mod query_editing;
 mod read_query;
 mod sql;
+pub mod sqlite;
 pub mod sqlserver;
 pub mod sqlx;
 pub mod vault;

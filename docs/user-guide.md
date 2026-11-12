@@ -70,6 +70,16 @@ Maps use MapLibre and the bundled VijiTiles Soft Earth style in `frontend/public
 
 PostGIS integration tests require `WEBDB_TEST_CONNECTION_JSON` pointing to an explicitly disposable database with PostGIS installed: `cargo test --manifest-path backend/Cargo.toml --test postgis -- --ignored`.
 
+## SQLite connections
+
+Choose **SQLite** and enter the absolute path to an existing local database file (for example, `C:\data\example.sqlite` on Windows or `/home/user/example.sqlite` on Linux). No host, port, username, or TLS settings are needed. Connecting opens the file without creating it; instance browsing, database creation/deletion, encrypted SQLite files, and SQLite URI options are unavailable. Manage files outside DBsaur. Saved profiles use the same encrypted connection vault as other providers.
+
+Tables and views appear under `main`, with columns, primary keys, indexes, and foreign keys. Browsing and SELECT queries use read-only file handles, a 10-second execution deadline, and up to 1,000 rows per page. Query results and views remain read only. Integers are returned as exact decimal strings; SQLite REAL values retain SQLite's floating-point precision. Binary values use hexadecimal text. Individual values are limited to 16 MiB. SQLite applies its normal type affinity when writing field text; use explicit SQL casts for storage types requiring precise control.
+
+Record inserts, updates, deletes, table creation/deletion, single-column additions, index changes, and supported SQLite DDL in **Database changes** use transactions with foreign-key enforcement. Updates and deletes require a non-NULL primary key and compare the complete browsed record to reject stale changes. Generated columns are read only. Partial, expression, descending, and custom-collation indexes must be managed with SQL. Use **Database changes** to rename or drop a column. Changing column definitions or primary/unique constraints generally requires rebuilding the table and is unavailable in the structured editor. SQLite pragmas, ATTACH, and transaction-control commands are excluded from the SQL workspaces.
+
+The SQLite integration tests create their own temporary disposable files and run with `cargo test --manifest-path backend/Cargo.toml --locked --test sqlite`; no database server is required.
+
 ## PostgreSQL editing and schema changes
 
 Browse a PostgreSQL base table and double-click a cell (or press Enter on a focused cell) to edit its value in a compact horizontal dialog. Click **Save value** or press **Ctrl/⌘ + Enter** to save. A single row click selects and highlights it, revealing **Delete row** in the table toolbar. Use **Insert record** above the table to add one. Values use PostgreSQL text input (for example `true`, a UUID, JSON text, or `{1,2}` for an array). NULL, empty text, and omitted fields are distinct. Omitted insert fields use database defaults; generated columns are maintained by PostgreSQL. Inserts, deletes, and schema changes require typing `APPLY` and confirming; individual cell edits use **Save value**. Failed changes preserve the draft.

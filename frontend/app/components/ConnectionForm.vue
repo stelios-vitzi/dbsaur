@@ -69,11 +69,16 @@ const form = reactive<ConnectionInput>({
   allDatabases: false,
   readOnly: false,
 })
+const isSqlite = computed(() => form.provider === 'sqlite')
 const options = computed(() => providerOptions(form.provider))
 watch(
   () => form.provider,
   () => {
     form.port = options.value.port
+    if (isSqlite.value) {
+      form.allDatabases = false
+      form.ssl = false
+    }
     form.password = ''
     form.tlsCa = undefined
     form.tlsCert = undefined
@@ -98,6 +103,9 @@ watch(
 function input(): ConnectionInput {
   return {
     ...form,
+    host: isSqlite.value ? '' : form.host,
+    username: isSqlite.value ? '' : form.username,
+    password: isSqlite.value ? '' : form.password,
     database: form.allDatabases ? '' : form.database,
     saveName: save.value && props.savingEnabled ? saveName.value.trim() : undefined,
   }
@@ -251,7 +259,7 @@ async function readPem(event: Event, field: 'tlsCa' | 'tlsCert' | 'tlsKey') {
             <option v-if="!providers.length" value="postgres">PostgreSQL</option>
           </select></label
         >
-        <div class="form-row host-row">
+        <div v-if="!isSqlite" class="form-row host-row">
           <label
             >Host<input
               v-model.trim="form.host"
@@ -271,7 +279,7 @@ async function readPem(event: Event, field: 'tlsCa' | 'tlsCert' | 'tlsKey') {
           /></label>
         </div>
       </div>
-      <div class="connection-option">
+      <div v-if="!isSqlite" class="connection-option">
         <label class="checkbox-label scope-toggle">
           <input v-model="form.allDatabases" type="checkbox" role="switch" :disabled="busy" />
           <span>Browse all databases in this instance</span>
@@ -282,15 +290,19 @@ async function readPem(event: Event, field: 'tlsCa' | 'tlsCert' | 'tlsKey') {
         />
       </div>
       <label v-if="!form.allDatabases"
-        >Database<input
+        >{{ isSqlite ? 'Database file path' : 'Database'
+        }}<input
           v-model.trim="form.database"
           required
-          maxlength="128"
+          :maxlength="isSqlite ? 4096 : 128"
           autocomplete="off"
-          placeholder="Database name"
+          :placeholder="isSqlite ? 'C:\\data\\example.sqlite' : 'Database name'"
           :disabled="busy"
       /></label>
-      <div class="form-row">
+      <p v-if="isSqlite" class="field-help">
+        Enter the absolute path to an existing local SQLite file. Connecting never creates a file.
+      </p>
+      <div v-if="!isSqlite" class="form-row">
         <label
           >Username<input
             v-model="form.username"
@@ -320,7 +332,7 @@ async function readPem(event: Event, field: 'tlsCa' | 'tlsCert' | 'tlsKey') {
           ></label
         >
       </div>
-      <div class="connection-tls">
+      <div v-if="!isSqlite" class="connection-tls">
         <input
           v-model="form.ssl"
           type="checkbox"

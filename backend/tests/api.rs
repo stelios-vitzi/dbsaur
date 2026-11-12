@@ -352,5 +352,15 @@ async fn registry_advertises_real_database_providers() {
         .iter()
         .map(|p| p["id"].as_str().unwrap())
         .collect();
-    assert_eq!(ids, ["demo", "mariadb", "mysql", "postgres", "sqlserver"]);
+    assert_eq!(
+        ids,
+        [
+            "demo",
+            "mariadb",
+            "mysql",
+            "postgres",
+            "sqlite",
+            "sqlserver"
+        ]
+    );
 }

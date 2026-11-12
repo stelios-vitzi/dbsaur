@@ -28,7 +28,7 @@ SmartScreen warnings. macOS packages use ad-hoc signing without Developer ID
 notarization and can trigger Gatekeeper warnings. See
 [operating-system trust](docs/desktop-updates.md#operating-system-trust).
 
-Online audits were rerun after the plain Vue/Vite migration: npm reports zero
+Online audits were rerun on 12 November 2026 after adding SQLite support: npm reports zero
 findings. All three Cargo lockfiles have no vulnerability findings; the desktop
 glib and proc-macro-error warnings remain visible. Native build and signed update
 verification are separate gates.
@@ -45,6 +45,12 @@ Tauri application. There is no standalone server or multi-user deployment mode.
 - The application intentionally connects to user-selected database hosts.
   All locally saved connections belong to the same OS user installation.
 - TLS is disabled by default. Enable verified TLS on untrusted networks.
+- SQLite opens an existing, user-selected local file. Browsing uses read-only
+  handles and query-only mode; explicit writes use transactions with foreign keys
+  enabled. URI parameters, attached databases, extension loading, and arbitrary
+  PRAGMA commands are unavailable. OS file permissions are the access boundary;
+  SQLite files have no server-side user permissions or TLS. Keep backups before
+  editing files, including files used by other applications.
 - Query parsing and read-only transactions where supported reduce accidental
   writes; they do not replace database privileges. SQL Server has no read-only
   transaction mode. Database functions, triggers, extensions, and remote systems
@@ -79,7 +85,7 @@ audits block high/critical findings. RustSec audits cover backend, desktop, and
 xtask lockfiles and block every vulnerability, including unscored ones. Audit
 errors also block publication. No advisory exceptions are configured.
 
-Current live audit results after the plain Vue/Vite refactor (11 November 2026):
+Current live audit results after adding SQLite support (12 November 2026):
 
 | Check | Result |
 | --- | --- |

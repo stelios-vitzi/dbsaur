@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { MySQL, MSSQL, PostgreSQL, sql } from '@codemirror/lang-sql'
+import { MySQL, MSSQL, PostgreSQL, SQLite, sql } from '@codemirror/lang-sql'
 import { providerOptions, quoteIdentifier } from '../app/providers/index.ts'
 
 test('providers select their ports, dialects and safe identifier quoting', () => {
@@ -12,6 +12,9 @@ test('providers select their ports, dialects and safe identifier quoting', () =>
   assert.equal(providerOptions('sqlserver').port, 1433)
   assert.equal(providerOptions('sqlserver').dialect, MSSQL)
   assert.equal(quoteIdentifier('a]b', 'sqlserver'), '[a]]b]')
+  assert.equal(providerOptions('sqlite').dialect, SQLite)
+  assert.equal(providerOptions('sqlite').port, 0)
+  assert.equal(quoteIdentifier('a"b', 'sqlite'), '"a""b"')
   assert.equal(providerOptions('postgres').port, 5432)
   assert.equal(providerOptions('postgres').dialect, PostgreSQL)
   assert.equal(quoteIdentifier('a"b', 'postgres'), '"a""b"')
@@ -22,7 +25,7 @@ import { CompletionContext } from '@codemirror/autocomplete'
 import { databaseCompletion, providerSnippets } from '../app/utils/sqlCompletion.ts'
 
 test('SQL completion uses the connected provider dialect', async () => {
-  for (const provider of ['mysql', 'mariadb', 'sqlserver']) {
+  for (const provider of ['mysql', 'mariadb', 'sqlserver', 'sqlite']) {
     const table = { schema: provider === 'sqlserver' ? 'dbo' : 'example', name: 'Order Details', kind: 'BASE TABLE', columns: ['id'] }
     const doc = 'SELECT * FROM '
     const context = new CompletionContext(EditorState.create({ doc, extensions: [sql({ dialect: providerOptions(provider).dialect })] }), doc.length, true)

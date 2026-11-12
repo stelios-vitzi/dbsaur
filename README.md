@@ -1,6 +1,6 @@
 # DBsaur
 
-A desktop database workspace for PostgreSQL, MySQL, MariaDB, and SQL Server.
+A desktop database workspace for PostgreSQL, MySQL, MariaDB, SQL Server, and SQLite.
 Browse data, run queries, edit records, manage schemas, and preview PostGIS
 geometry from a single local application.
 
@@ -29,6 +29,7 @@ audits to pass; see the [security policy](SECURITY.md#release-security-gate--11-
 | MySQL 8+         | Supported           | Supported                 | Not supported     |
 | MariaDB 10.6+    | Supported           | Supported                 | Not supported     |
 | SQL Server 2016+ | Supported           | Supported                 | Not supported     |
+| SQLite           | Supported           | Supported with limits     | Not supported     |
 
 Provider behavior differs: SQL Server queries currently exclude CTEs, MySQL and
 MariaDB DDL can commit implicitly, and some generated fields remain read only.

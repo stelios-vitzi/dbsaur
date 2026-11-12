@@ -60,7 +60,7 @@ impl UpdateDatabaseSettings {
 }
 
 /// Writes are deliberately separate from browsing and read-only SQL.
-#[derive(Deserialize)]
+#[derive(Clone, Deserialize)]
 #[serde(
     tag = "action",
     rename_all = "camelCase",
@@ -194,6 +194,20 @@ impl ConnectionInput {
         if self.provider == "demo" {
             return Ok(());
         }
+        if self.provider == "sqlite" {
+            if self.database.is_empty()
+                || self.database.len() > 4096
+                || self.database.chars().any(char::is_control)
+                || !std::path::Path::new(&self.database).is_absolute()
+                || self.all_databases
+                || self.ssl
+            {
+                return Err(
+                    "Enter an absolute path to an existing SQLite file. Instance browsing and TLS are unavailable.",
+                );
+            }
+            return Ok(());
+        }
         if self.host.is_empty()
             || self.host.len() > 253
             || self
@@ -302,7 +316,7 @@ pub struct ColumnDefinition {
     pub default_constraint: Option<String>,
 }
 
-#[derive(Deserialize)]
+#[derive(Clone, Deserialize)]
 #[serde(
     tag = "kind",
     rename_all = "camelCase",
@@ -366,7 +380,7 @@ pub struct GeometryPreview {
     pub empty: bool,
     pub geojson: Option<Value>,
 }
-#[derive(Default, Deserialize)]
+#[derive(Clone, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BrowseQuery {
     pub schema: String,
@@ -377,7 +391,7 @@ pub struct BrowseQuery {
     pub descending: Option<bool>,
 }
 
-#[derive(Deserialize)]
+#[derive(Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SqlQuery {
     pub sql: String,

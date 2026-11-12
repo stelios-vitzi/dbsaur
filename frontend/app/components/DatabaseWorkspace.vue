@@ -543,7 +543,7 @@ async function cellSaved() {
                     ? 'Sample workspace'
                     : session.allDatabases
                       ? `${providers.find((p) => p.id === session?.provider)?.name ?? session.provider} instance`
-                      : `${providers.find((p) => p.id === session?.provider)?.name ?? session.provider} / ${session.host}`
+                      : `${providers.find((p) => p.id === session?.provider)?.name ?? session.provider} / ${session.host || 'Local file'}`
                   : 'Connect to get started'
               }}</span>
             </div>

@@ -24,6 +24,7 @@ pub fn router_with_repository(
             Arc::new(adapters::mysql::MySqlAdapter),
             Arc::new(adapters::mariadb::MariaDbAdapter),
             Arc::new(adapters::sqlserver::SqlServerAdapter),
+            Arc::new(adapters::sqlite::SqliteAdapter),
         ]),
     )
 }

@@ -50,7 +50,7 @@ async function loadColumnDefinitions() {
       signal: metadataController.signal,
     })
     columnDefinitions.value = page.columns
-    if (page.columns.some((column) => !column.definition))
+    if (props.provider !== 'sqlite' && page.columns.some((column) => !column.definition))
       columnError.value =
         'Column definitions are unavailable. Restart the desktop app with the updated backend.'
   } catch {
@@ -68,6 +68,7 @@ function editExistingColumn(name: string) {
 const options = computed(() => providerOptions(props.provider))
 const typeSuggestions = computed(() => {
   const common = ['smallint', 'integer', 'bigint', 'varchar(255)', 'text', 'decimal(10,2)', 'date']
+  if (props.provider === 'sqlite') return ['INTEGER', 'REAL', 'TEXT', 'BLOB', 'NUMERIC']
   if (props.provider === 'sqlserver')
     return [...common, 'bit', 'nvarchar(255)', 'datetime2', 'uniqueidentifier', 'varbinary(max)']
   if (props.provider === 'mysql' || props.provider === 'mariadb')
@@ -79,15 +80,19 @@ const defaultSchema =
     ? props.database
     : props.provider === 'sqlserver'
       ? 'dbo'
-      : 'public'
+      : props.provider === 'sqlite'
+        ? 'main'
+        : 'public'
 const schema = ref(props.table?.schema ?? defaultSchema)
 const tableName = ref(props.table?.name ?? 'new_table')
 const identityType =
-  props.provider === 'sqlserver'
-    ? 'bigint IDENTITY(1,1)'
-    : props.provider === 'postgres'
-      ? 'bigint GENERATED ALWAYS AS IDENTITY'
-      : 'bigint AUTO_INCREMENT'
+  props.provider === 'sqlite'
+    ? 'INTEGER'
+    : props.provider === 'sqlserver'
+      ? 'bigint IDENTITY(1,1)'
+      : props.provider === 'postgres'
+        ? 'bigint GENERATED ALWAYS AS IDENTITY'
+        : 'bigint AUTO_INCREMENT'
 const fields = ref<NewField[]>(
   props.table
     ? []
@@ -130,6 +135,7 @@ if (
 const keyMetadataAvailable = computed(
   () =>
     !!props.table &&
+    props.provider !== 'sqlite' &&
     Array.isArray(props.table.keyConstraints) &&
     (!props.table.primaryKeys?.length ||
       props.table.keyConstraints.some((key) => key.kind === 'PRIMARY KEY')),
@@ -310,7 +316,11 @@ const canSave = computed(
 )
 
 function addField() {
-  if (fields.value.length >= 50) return
+  if (
+    fields.value.length >= 50 ||
+    (props.provider === 'sqlite' && props.table && fields.value.length)
+  )
+    return
   const name = `new_field_${fields.value.length + 1}`
   fields.value.push({
     name,
@@ -537,13 +547,19 @@ onMounted(() => {
             </div>
             <p v-else class="schema-section-note">
               {{
-                fields.length || pendingKeyMutation
-                  ? 'Apply or discard field and key changes before editing an existing column.'
-                  : 'Select a column to edit its definition, rename it, or delete it.'
+                provider === 'sqlite'
+                  ? 'Use Database changes to rename or drop columns. Type and key changes require rebuilding the table.'
+                  : fields.length || pendingKeyMutation
+                    ? 'Apply or discard field and key changes before editing an existing column.'
+                    : 'Select a column to edit its definition, rename it, or delete it.'
               }}
             </p>
             <p v-if="!keyMetadataAvailable" class="schema-section-note">
-              Refresh the explorer to load key details before editing keys.
+              {{
+                provider === 'sqlite'
+                  ? 'SQLite key changes require rebuilding the table. Add one new column at a time.'
+                  : 'Refresh the explorer to load key details before editing keys.'
+              }}
             </p>
           </section>
           <section class="schema-key-editor" aria-label="Unique key constraints">
@@ -618,7 +634,11 @@ onMounted(() => {
             <button
               type="button"
               class="button secondary small"
-              :disabled="saving || fields.length >= 50"
+              :disabled="
+                saving ||
+                fields.length >= 50 ||
+                (provider === 'sqlite' && !!table && fields.length >= 1)
+              "
               @click="addField"
             >
               <AppIcon name="plus" :size="14" />Add field
