@@ -10,7 +10,7 @@ defineProps<{
 }>()
 const emit = defineEmits<{
   reconnect: [id: string]
-  remove: [id: string]
+  manage: [id: string]
   add: []
   sample: []
 }>()
@@ -60,11 +60,11 @@ const emit = defineEmits<{
             class="connection-tile-remove icon-button"
             type="button"
             :disabled="busy"
-            :aria-label="`Remove ${connection.name}`"
-            title="Remove saved connection"
-            @click="emit('remove', connection.id)"
+            :aria-label="`Settings for ${connection.name}`"
+            title="Connection settings"
+            @click="emit('manage', connection.id)"
           >
-            <AppIcon name="close" :size="14" />
+            <AppIcon name="settings" :size="16" />
           </button>
         </article>
         <article class="connection-tile add-tile">

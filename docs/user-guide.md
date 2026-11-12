@@ -15,9 +15,22 @@ directory and back up both files securely; losing the key makes stored credentia
 unrecoverable. No vault environment variables or separate service are required.
 Saved SQL and interface preferences use the embedded webview's local storage.
 
+Open the gear on a saved connection, or on its active connection card in the
+explorer, to edit that connection's name, server, database, credentials, TLS, or
+read-only mode, then choose **Save changes**. The editor is scoped to that
+connection; it does not show or switch to other saved connections.
+**Test connection** checks the draft without saving it or replacing your session.
+Reconnect to apply saved changes to your active connection.
+
+Leave the password blank to keep it, enter a new password to replace it, or select
+**Remove saved password** to clear it. Saved TLS private keys stay on the backend;
+the TLS settings let you retain, replace, or remove them. **Delete this saved connection** asks for
+confirmation before deleting the saved connection; deletion does not disconnect
+the active session or remove any database data.
+
 ## Database providers
 
-MongoDB is also available as an experimental read-only document provider; see [MongoDB](#mongodb-experimental).
+MongoDB supports document browsing, editing, and aggregation queries; see [MongoDB](#mongodb).
 
 | Provider         | Default port | Browsing and SELECT queries | Instance discovery              | Editing and settings            |
 | ---------------- | ------------ | --------------------------- | ------------------------------- | ------------------------------- |
@@ -166,9 +179,9 @@ server, browser deployment, or multi-user hosting mode.
 
 See [SECURITY.md](../SECURITY.md) for vulnerability reporting, scope, and dated dependency scan results. A clean dependency scan cannot guarantee the absence of all vulnerabilities.
 
-## MongoDB (experimental)
+## MongoDB
 
-Choose **MongoDB (experimental)** to browse collections as documents. Enter a single
+Choose **MongoDB** to browse collections as documents. Enter a single
 host and port (default 27017), database, and optional username/password. Authentication
 uses **admin** unless you set **Authentication database**. Leave both credentials empty
 only for a server configured without authentication. URL import accepts single-host
@@ -187,26 +200,71 @@ objects, not shell expressions or SQL. For example:
 Sort uses `{"createdAt": -1}` for descending order; `_id` is appended as a stable tie
 breaker. Projection uses `{"name": 1}` to include fields, or `{"payload": 0}` to omit
 large fields. MongoDB's rules for combining inclusion/exclusion apply. Reset clears
-all three objects and browses the collection again. Expand a document to inspect
-nested objects and arrays. Results and page exports use canonical Extended JSON so
+all three objects and browses the collection again. Open **Options** beside the query
+mode to edit Sort and Projection. Expand a document to inspect its fields in **Tree**
+view, where nested objects and arrays can be expanded independently. Choose **JSON**
+for the complete document, or **Copy document as JSON** in the document actions menu.
+Results and page exports use canonical Extended JSON so
 ObjectIds, dates, decimals, binary values, and 64-bit integers retain their BSON types.
 Use Extended JSON for large query numbers too; plain unsafe JavaScript integers are
 rejected before submitting the filter.
 
-Connections are always read only. Inserts, updates, deletion, schema diagrams,
-aggregation pipelines, arbitrary commands, and server-side JavaScript are unavailable.
-Instance browsing lists databases accessible to your account and may require extra
-list-database permissions. Use a database account with read-only privileges.
+### Editing documents
 
-Each operation has a 10-second deadline. Pages allow up to 1,000 documents through
+Read-only mode is optional, as with SQL connections. Existing saved connections that
+have read-only mode enabled stay read only; reconnect with it disabled to edit.
+**Insert document** accepts a complete JSON object; omit `_id` to generate an ObjectId.
+Use **Edit document** and **Delete document** in the document actions menu in
+the title row. If editing is disabled, expand the document to see the reason and
+recovery steps below its contents.
+Editing replaces the whole document: removing a field removes it in the database.
+The `_id` must remain unchanged. Review the JSON, type **APPLY**, and confirm the save.
+Edits and deletions compare against the original BSON snapshot atomically. If the
+document changed or disappeared, refresh and review it before retrying. A timeout
+may occur after a write committed; refresh before retrying an insert.
+
+Only unprojected Find results can be edited. Aggregation results, projected results,
+system collections, and documents exceeding 1 MiB of BSON are view-only. Replacement
+and insertion payloads are limited to 1 MiB of Extended JSON. BSON types use the same
+Extended JSON wrappers shown in the highlighted document viewer and editor.
+
+### Aggregation queries
+
+Choose **Aggregation pipeline** for grouped totals, transformations, or counts.
+A pipeline runs each stage in sequence. For example, filter active orders and count
+them by customer:
+
+```json
+[
+  { "$match": { "status": "active" } },
+  { "$group": { "_id": "$customerId", "orders": { "$sum": 1 } } },
+  { "$sort": { "orders": -1, "_id": 1 } }
+]
+```
+
+Supported stages: `$match`, `$project`, `$sort`, `$limit`, `$skip`, `$group`,
+`$count`, `$unwind`, `$addFields`/`$set`, `$unset`, `$replaceRoot`/`$replaceWith`,
+`$sortByCount`, `$bucket`, `$bucketAuto`, and `$facet`. Each pipeline has at most
+50 stages, with up to 8 levels of nested facets. Add a deterministic `$sort` for
+consistent pagination; the page offset and limit apply after your pipeline. Disk
+spilling is disabled. Queries remain read only even on writable connections:
+`$out`, `$merge`, arbitrary commands, and server-side JavaScript are rejected.
+Cross-collection joins, schema diagrams, and collection/index administration are
+not available in this workspace.
+Instance browsing lists databases accessible to your account and may require extra
+list-database permissions. Use read-only database privileges for browsing-only accounts.
+
+Reads have a 10-second deadline; writes have a 15-second client deadline.
+Pages allow up to 1,000 documents through
 the API (the document UI offers 25, 50, or 100) and at most 8 MiB of serialized
-Extended JSON. Offsets above 100,000 are rejected; narrow the filter instead. No exact
+Extended JSON, including edit snapshots. Offsets above 100,000 are rejected;
+narrow the filter instead. No exact
 collection count is requested. Concurrent changes can shift offset-based pages.
 Large individual BSON documents can still be received before the serialized-page
-limit is checked. This experimental provider has unit coverage; live tests require
+limit is checked. Unit tests cover validation and BSON snapshots; live tests require
 an explicitly configured disposable MongoDB database.
 
 The ignored integration test creates and removes a randomly named fixture collection:
 set `WEBDB_TEST_MONGODB_CONNECTION_JSON` to connection JSON for a disposable database,
 then run `cargo test --manifest-path backend/Cargo.toml --test mongodb -- --ignored`.
-The fixture account needs insert/drop privileges; application browsing itself remains read only.
+The fixture account needs insert/update/delete/drop privileges.

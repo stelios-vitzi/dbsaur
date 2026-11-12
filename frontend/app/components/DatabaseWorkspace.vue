@@ -10,6 +10,7 @@ import AboutDialog from './AboutDialog.vue'
 import ShortcutsDialog from './ShortcutsDialog.vue'
 import CellEditor from './CellEditor.vue'
 import ConnectionForm from './ConnectionForm.vue'
+import ConnectionSettingsDialog from './ConnectionSettingsDialog.vue'
 import ContextMenu from './ContextMenu.vue'
 import DatabaseExplorer from './DatabaseExplorer.vue'
 import DatabaseLauncher from './DatabaseLauncher.vue'
@@ -69,7 +70,8 @@ const schemaEditable = computed(
     !!session.value &&
     session.value.provider !== 'demo' &&
     !session.value.readOnly &&
-    providerOptions(session.value.provider).editing,
+    providerOptions(session.value.provider).editing &&
+    session.value.provider !== 'mongodb',
 )
 const recordEditable = computed(
   () =>
@@ -215,6 +217,11 @@ async function mutationSaved() {
   toast.show(createdDatabase ? 'Database created successfully.' : 'Row deleted successfully.')
   explorerKey.value++
   await db.refreshExplorer()
+}
+async function mongoDocumentSaved() {
+  workspaceTabs.invalidate()
+  toast.show('Document change saved.')
+  await db.loadRows()
 }
 function openDiagramTableEditor(table: TableInfo | null, suggestedUniqueColumn?: string) {
   diagramSuggestedUniqueColumn.value = suggestedUniqueColumn
@@ -379,6 +386,14 @@ watch(activeView, async () => {
       ?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
 })
 const connectionDialog = useTemplateRef<HTMLDialogElement>('connectionDialog')
+const connectionSettingsId = ref<string>()
+const activeSavedConnection = computed(() =>
+  savedConnections.value.find((connection) => connection.id === db.activeSavedConnectionId.value),
+)
+function openConnectionSettings(id: string) {
+  connectionDialog.value?.close()
+  connectionSettingsId.value = id
+}
 const initialSql = computed(() => {
   return selectedTable.value
     ? `SELECT * FROM ${quoteIdentifier(selectedTable.value.schema, session.value?.provider)}.${quoteIdentifier(selectedTable.value.name, session.value?.provider)};`
@@ -468,9 +483,23 @@ async function cellSaved() {
       <AppMenuBar
         :menus="[
           {
-            label: 'File',
+            label: 'Connection',
             actions: [
               { label: 'New connection…', run: () => connectionDialog?.showModal() },
+              {
+                label: 'Edit connection…',
+                disabled: !activeSavedConnection || connecting || switching,
+                run: () => {
+                  if (activeSavedConnection) openConnectionSettings(activeSavedConnection.id)
+                },
+              },
+              {
+                label: 'Database settings…',
+                disabled: session?.provider !== 'postgres' || connecting || switching,
+                run: () => {
+                  settingsOpen = true
+                },
+              },
               {
                 label: 'Disconnect',
                 disabled: !session || connecting || switching,
@@ -520,11 +549,16 @@ async function cellSaved() {
           },
         ]"
       />
-      <div v-if="session" class="header-actions">
-        <button class="button secondary small" @click="connectionDialog?.showModal()">
+      <div class="header-actions">
+        <button
+          v-if="session"
+          class="button secondary small"
+          @click="connectionDialog?.showModal()"
+        >
           <AppIcon name="plus" :size="15" /><span>New connection</span>
         </button>
         <button
+          v-if="session"
           class="icon-button"
           title="Disconnect"
           aria-label="Disconnect"
@@ -652,12 +686,15 @@ async function cellSaved() {
         :busy="connecting || db.testing.value"
         :error="connectionError"
         @reconnect="connect"
-        @remove="db.deleteSavedConnection"
+        @manage="openConnectionSettings"
         @add="connectionDialog?.showModal()"
         @sample="connect(sampleConnection)"
       />
       <MongoWorkspace
         v-else-if="session.provider === 'mongodb'"
+        :key="`${session.database}:${selectedTable?.name}`"
+        :read-only="session.readOnly"
+        :apply="db.applyMutation"
         :table="selectedTable"
         :data="data"
         :busy="busy || switching || connecting"
@@ -666,6 +703,7 @@ async function cellSaved() {
         :page-size="pageSize"
         :active-query="activeQuery"
         @find="db.runQuery"
+        @saved="mongoDocumentSaved"
         @refresh="selectedTable ? db.loadRows() : db.loadTables()"
         @page="db.changePage"
         @page-size="db.changePageSize"
@@ -927,9 +965,22 @@ async function cellSaved() {
         :saving-enabled="savingEnabled"
         :show-saved-connections="!!session"
         @reconnect="connect"
-        @remove="db.deleteSavedConnection"
+        @manage="openConnectionSettings"
         @connect="connect"
       />
     </dialog>
+    <ConnectionSettingsDialog
+      v-if="connectionSettingsId"
+      :key="connectionSettingsId"
+      :providers="providers"
+      :saving-enabled="savingEnabled"
+      :connection-id="connectionSettingsId"
+      :load="db.loadSavedConnection"
+      :update="db.updateSavedConnection"
+      :remove="db.deleteSavedConnection"
+      :test="db.testConnection"
+      :test-saved="db.testSavedConnection"
+      @close="connectionSettingsId = undefined"
+    />
   </div>
 </template>

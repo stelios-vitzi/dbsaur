@@ -15,6 +15,10 @@ async fn browse_filter_projection_and_pagination() {
     .unwrap();
     assert_eq!(input.provider, "mongodb");
     assert!(!input.all_databases && !input.database.is_empty());
+    assert!(
+        !input.read_only,
+        "The disposable fixture connection must permit writes"
+    );
     input.validate().unwrap();
     // Fixture writes occur only in this explicitly configured, ignored test.
     let mut options = ClientOptions::builder()
@@ -96,6 +100,80 @@ async fn browse_filter_projection_and_pagination() {
             .unwrap();
         assert_eq!(filtered.rows.len(), 1);
         assert_eq!(filtered.rows[0]["nested"]["ok"], true);
+        let snapshot = filtered.editing.as_ref().unwrap().originals[0]["snapshot"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        let mut replacement = filtered.rows[0].clone();
+        replacement.insert(
+            "edited".into(),
+            serde_json::json!({"$numberDecimal":"1.20"}),
+        );
+        let replace = Mutation::ReplaceDocument {
+            schema: input.database.clone(),
+            table: name.clone(),
+            snapshot: snapshot.clone(),
+            document: serde_json::Value::Object(replacement),
+        };
+        assert_eq!(
+            MongoAdapter
+                .mutate(&input, &replace)
+                .await
+                .unwrap()
+                .affected_rows,
+            1
+        );
+        // The original snapshot must not overwrite or delete the now-changed document.
+        assert!(MongoAdapter.mutate(&input, &replace).await.is_err());
+        assert!(
+            MongoAdapter
+                .mutate(
+                    &input,
+                    &Mutation::DeleteDocument {
+                        schema: input.database.clone(),
+                        table: name.clone(),
+                        snapshot
+                    }
+                )
+                .await
+                .is_err()
+        );
+        let aggregate = MongoAdapter.query(&input, &SqlQuery { sql: serde_json::json!({"collection":name,"pipeline":[{"$group":{"_id":null,"count":{"$sum":1}}}]}).to_string(), page: None, page_size: None }).await.unwrap();
+        assert_eq!(aggregate.rows[0]["count"]["$numberInt"], "2");
+        assert!(aggregate.editing.is_none());
+        assert_eq!(MongoAdapter.mutate(&input, &Mutation::InsertDocument { schema: input.database.clone(), table: name.clone(), document: serde_json::json!({"_id":"inserted","nested":[null,true],"n":{"$numberLong":"9007199254740993"}}) }).await.unwrap().affected_rows, 1);
+        let inserted = MongoAdapter
+            .query(
+                &input,
+                &SqlQuery {
+                    sql: serde_json::json!({"collection":name,"filter":{"_id":"inserted"}})
+                        .to_string(),
+                    page: None,
+                    page_size: None,
+                },
+            )
+            .await
+            .unwrap();
+        assert_eq!(inserted.rows[0]["n"]["$numberLong"], "9007199254740993");
+        let snapshot = inserted.editing.as_ref().unwrap().originals[0]["snapshot"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        assert_eq!(
+            MongoAdapter
+                .mutate(
+                    &input,
+                    &Mutation::DeleteDocument {
+                        schema: input.database.clone(),
+                        table: name.clone(),
+                        snapshot
+                    }
+                )
+                .await
+                .unwrap()
+                .affected_rows,
+            1
+        );
     };
     // Clean the fixture even if assertions fail.
     let result = tokio::spawn(result).await;

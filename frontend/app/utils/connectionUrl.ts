@@ -79,9 +79,7 @@ export function parseConnectionUrl(value: string): ConnectionInput {
       password,
       ssl,
       allDatabases: !database,
-      ...(type.provider === 'mongodb'
-        ? { authSource: authSource ?? (database || 'admin'), readOnly: true }
-        : {}),
+      ...(type.provider === 'mongodb' ? { authSource: authSource ?? (database || 'admin') } : {}),
     }
   } catch (cause) {
     if (cause instanceof TypeError || cause instanceof URIError) throw invalid()

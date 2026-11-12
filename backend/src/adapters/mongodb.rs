@@ -1,4 +1,4 @@
-//! Experimental, deliberately read-only document provider. No arbitrary commands or scripts.
+//! Bounded document reads and explicit single-document writes.
 use crate::{application::*, domain::*};
 use async_trait::async_trait;
 use mongodb::{
@@ -7,6 +7,10 @@ use mongodb::{
     options::{ClientOptions, Credential, ServerAddress, Tls, TlsOptions},
 };
 use serde::Deserialize;
+mod query;
+mod read;
+mod write;
+use query::{empty_object, parse};
 use serde_json::{Map, Value};
 use std::time::Duration;
 
@@ -59,78 +63,19 @@ fn client(input: &ConnectionInput) -> AppResult<Client> {
     Client::with_options(options).map_err(upstream)
 }
 
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct FindQuery {
-    collection: String,
-    #[serde(default = "empty_object")]
-    filter: Value,
-    #[serde(default = "empty_object")]
-    sort: Value,
-    #[serde(default = "empty_object")]
-    projection: Value,
-}
-fn empty_object() -> Value {
-    Value::Object(Map::new())
-}
-fn document(value: Value) -> AppResult<Document> {
-    fn check(value: &Value, depth: usize) -> bool {
-        if depth > 32 {
-            return false;
-        }
-        match value {
-            Value::Object(map) => map.iter().all(|(key, value)| {
-                !["$where", "$function", "$accumulator"].contains(&key.as_str())
-                    && check(value, depth + 1)
-            }),
-            Value::Array(items) => items.iter().all(|value| check(value, depth + 1)),
-            _ => true,
-        }
-    }
-    if !value.is_object() || !check(&value, 0) {
-        return Err(invalid(
-            "Use JSON objects with at most 32 nesting levels. Server-side JavaScript is unavailable.",
-        ));
-    }
-    match Bson::try_from(value).map_err(|_| invalid("Invalid MongoDB Extended JSON."))? {
-        Bson::Document(document) => Ok(document),
-        _ => Err(invalid("Expected a JSON object.")),
-    }
-}
-fn parse(query: &SqlQuery) -> AppResult<(FindQuery, Document, Document, Document)> {
-    query.bounds().map_err(invalid)?;
-    let find: FindQuery = serde_json::from_str(&query.sql).map_err(|_| {
-        invalid("Use a JSON object with collection, filter, sort, and projection fields.")
-    })?;
-    if find.collection.is_empty() || find.collection.len() > 128 || find.collection.contains('\0') {
-        return Err(invalid("Choose a collection name of at most 128 bytes."));
-    }
-    let filter = document(find.filter.clone())?;
-    let sort = document(find.sort.clone())?;
-    if sort
-        .values()
-        .any(|value| !matches!(value, Bson::Int32(1 | -1) | Bson::Int64(1 | -1)))
-    {
-        return Err(invalid("Sort directions must be 1 or -1."));
-    }
-    let projection = document(find.projection.clone())?;
-    if projection.values().any(|value| {
-        !matches!(
-            value,
-            Bson::Int32(0 | 1) | Bson::Int64(0 | 1) | Bson::Boolean(_)
-        )
-    }) {
-        return Err(invalid("Projection values must be 0, 1, false, or true."));
-    }
-    Ok((find, filter, sort, projection))
-}
-
 #[async_trait]
 impl DatabaseAdapter for MongoAdapter {
+    async fn mutate(
+        &self,
+        input: &ConnectionInput,
+        mutation: &Mutation,
+    ) -> AppResult<MutationResult> {
+        super::write::bounded(write::mutate(input, mutation)).await
+    }
     fn provider(&self) -> Provider {
         Provider {
             id: "mongodb",
-            name: "MongoDB (experimental)",
+            name: "MongoDB",
         }
     }
     fn maintenance_database(&self) -> Option<&'static str> {
@@ -214,59 +159,7 @@ impl DatabaseAdapter for MongoAdapter {
         .await
     }
     async fn query(&self, input: &ConnectionInput, query: &SqlQuery) -> AppResult<TablePage> {
-        bounded(async {
-        let (find, filter, mut sort, projection) = parse(query)?;
-        let (page, page_size) = query.bounds().map_err(invalid)?;
-        let skip = u64::from(page) * u64::from(page_size);
-        if skip > 100_000 {
-            return Err(invalid(
-                "MongoDB browsing is limited to the first 100,000 documents. Narrow the filter.",
-            ));
-        }
-        if !sort.contains_key("_id") {
-            sort.insert("_id", 1);
-        }
-        let client = client(input)?;
-        let collection = client
-            .database(&input.database)
-            .collection::<Document>(&find.collection);
-        let mut cursor = collection
-            .find(filter)
-            .sort(sort)
-            .projection(projection)
-            .skip(skip)
-            .limit(i64::from(page_size) + 1)
-            .batch_size(page_size.min(50))
-            .max_time(TIMEOUT)
-            .await
-            .map_err(upstream)?;
-        let mut rows = Vec::new();
-        let mut bytes = 0;
-        while cursor.advance().await.map_err(upstream)? {
-            let document: Document = cursor.deserialize_current().map_err(upstream)?;
-            let value = Bson::Document(document).into_canonical_extjson();
-            bytes += value.to_string().len();
-            if bytes > 8 * 1024 * 1024 {
-                return Err(invalid(
-                    "Document page exceeds 8 MiB. Reduce the page size or use a projection.",
-                ));
-            }
-            if let Value::Object(document) = value {
-                rows.push(document);
-            }
-        }
-        let has_more = rows.len() > page_size as usize;
-        rows.truncate(page_size as usize);
-        Ok(TablePage {
-            columns: vec![],
-            rows,
-            has_more,
-            page,
-            page_size,
-            total_rows: None,
-            editing: None,
-        })
-        }).await
+        bounded(read::page(input, query)).await
     }
 }
 
@@ -289,6 +182,7 @@ mod tests {
             r#"{"collection":"items","filter":{"$or":[{"$where":"return true"}]}}"#,
             r#"{"collection":"items","filter":{"$expr":{"$function":{}}}}"#,
             r#"{"collection":"items","pipeline":[{"$out":"other"}]}"#,
+            r#"{"collection":"items","pipeline":[{"$facet":{"bad":[{"$merge":"other"}]}}]}"#,
             r#"{"collection":"items","sort":{"x":"desc"}}"#,
             r#"{"collection":"items","projection":{"x":{"$slice":1}}}"#,
             r#"{"collection":"items","filter":[]}"#,
@@ -304,7 +198,7 @@ mod tests {
         assert_eq!(value["nested"]["ok"], true);
     }
     #[tokio::test]
-    async fn writes_are_unavailable_without_connecting() {
+    async fn arbitrary_commands_are_rejected_without_connecting() {
         let input = serde_json::from_value(serde_json::json!({"provider":"mongodb","host":"localhost","port":27017,"database":"test","username":"","password":"","ssl":false})).unwrap();
         assert!(
             MongoAdapter

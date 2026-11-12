@@ -5,7 +5,13 @@ import HelpTooltip from './HelpTooltip.vue'
 
 import { providerOptions } from '../providers'
 import { parseConnectionUrl } from '../utils/connectionUrl'
-import type { ConnectionInput, Provider, SavedConnection } from '../../shared/database'
+import type {
+  ConnectionInput,
+  Provider,
+  SavedConnection,
+  SavedConnectionDetails,
+  UpdateSavedConnection,
+} from '../../shared/database'
 const props = defineProps<{
   busy: boolean
   error: string
@@ -14,11 +20,15 @@ const props = defineProps<{
   showSavedConnections?: boolean
   savingEnabled: boolean
   testConnection: (input: ConnectionInput) => Promise<{ ok: boolean; elapsedMs: number }>
+  initial?: SavedConnectionDetails
+  saveChanges?: (update: UpdateSavedConnection) => Promise<void>
+  testChanges?: (update: UpdateSavedConnection) => Promise<{ ok: boolean; elapsedMs: number }>
 }>()
 const emit = defineEmits<{
   connect: [input: ConnectionInput]
   reconnect: [id: string]
-  remove: [id: string]
+  manage: [id: string]
+  saved: []
 }>()
 const save = ref(false)
 const saveName = ref('')
@@ -32,6 +42,11 @@ const testResult = ref('')
 const testing = ref(false)
 const readingFile = ref(false)
 const showPassword = ref(false)
+const clearPassword = ref(false)
+const retainTlsKey = ref(false)
+const hasSavedPassword = computed(
+  () => props.initial?.hasPassword && props.initial.input.provider === form.provider,
+)
 const locked = computed(() => props.busy || testing.value || readingFile.value)
 const savedFilter = ref('')
 const filteredConnections = computed(() =>
@@ -74,10 +89,8 @@ const isMongo = computed(() => form.provider === 'mongodb')
 const options = computed(() => providerOptions(form.provider))
 watch(
   () => form.provider,
-  (_provider, previousProvider) => {
+  () => {
     form.port = options.value.port
-    if (isMongo.value) form.readOnly = true
-    else if (previousProvider === 'mongodb') form.readOnly = false
     form.authSource = undefined
     if (isSqlite.value) {
       form.allDatabases = false
@@ -87,8 +100,10 @@ watch(
     form.tlsCa = undefined
     form.tlsCert = undefined
     form.tlsKey = undefined
+    retainTlsKey.value = false
     showPassword.value = false
   },
+  { flush: 'sync' },
 )
 watch(form, () => {
   testResult.value = ''
@@ -101,9 +116,30 @@ watch(
       form.tlsCa = undefined
       form.tlsCert = undefined
       form.tlsKey = undefined
+      retainTlsKey.value = false
     }
   },
+  { flush: 'sync' },
 )
+watch(
+  () => props.initial,
+  (initial) => {
+    if (!initial) return
+    Object.assign(form, initial.input)
+    retainTlsKey.value = initial.hasTlsKey
+    saveName.value = initial.name
+    clearPassword.value = false
+  },
+  { immediate: true },
+)
+function changes(): UpdateSavedConnection {
+  return {
+    name: saveName.value.trim(),
+    input: { ...input(), saveName: undefined },
+    keepPassword: !!hasSavedPassword.value && !clearPassword.value && !form.password,
+    keepTlsKey: retainTlsKey.value && !form.tlsKey,
+  }
+}
 function input(): ConnectionInput {
   return {
     ...form,
@@ -117,16 +153,26 @@ function input(): ConnectionInput {
 function valid() {
   localError.value = ''
   if (!formElement.value?.reportValidity()) return false
-  if (!!form.tlsCert !== !!form.tlsKey) {
+  if (!!form.tlsCert !== !!(form.tlsKey || retainTlsKey.value)) {
     localError.value = 'Choose both a client certificate and its private key.'
     return false
   }
   return true
 }
-function submit() {
+async function submit() {
   if (locked.value || !valid()) return
-  if (save.value && props.savingEnabled && !saveName.value.trim()) {
+  if ((props.initial || (save.value && props.savingEnabled)) && !saveName.value.trim()) {
     localError.value = 'Enter a name for the saved connection.'
+    return
+  }
+  if (props.initial && props.saveChanges) {
+    try {
+      await props.saveChanges(changes())
+      form.password = ''
+      emit('saved')
+    } catch (cause) {
+      localError.value = cause instanceof Error ? cause.message : 'Could not save the connection.'
+    }
     return
   }
   emit('connect', input())
@@ -138,13 +184,20 @@ async function test() {
   testResult.value = ''
   testing.value = true
   try {
-    const result = await props.testConnection({ ...input(), saveName: undefined })
+    const result =
+      props.initial && props.testChanges
+        ? await props.testChanges(changes())
+        : await props.testConnection({ ...input(), saveName: undefined })
     testResult.value = `Connection successful (${result.elapsedMs} ms). Ready to connect.`
   } catch (cause) {
     localError.value = cause instanceof Error ? cause.message : 'Connection test failed.'
   } finally {
     testing.value = false
   }
+}
+function removePem(field: 'tlsCa' | 'tlsCert' | 'tlsKey') {
+  form[field] = undefined
+  if (field === 'tlsKey') retainTlsKey.value = false
 }
 async function importUrl() {
   if (locked.value) return
@@ -204,8 +257,14 @@ async function readPem(event: Event, field: 'tlsCa' | 'tlsCert' | 'tlsKey') {
       <div class="connection-heading">
         <span class="connection-symbol"><AppIcon name="database" :size="26" /></span>
         <div>
-          <h1>Connect to your database</h1>
-          <p>Connect, verify, then explore.</p>
+          <h1>{{ initial ? 'Edit connection' : 'Connect to your database' }}</h1>
+          <p>
+            {{
+              initial
+                ? 'Saved changes take effect the next time you connect.'
+                : 'Connect, verify, then explore.'
+            }}
+          </p>
         </div>
       </div>
       <section
@@ -234,11 +293,11 @@ async function readPem(event: Event, field: 'tlsCa' | 'tlsCert' | 'tlsKey') {
             type="button"
             class="icon-button"
             :disabled="busy"
-            :aria-label="`Remove ${saved.name}`"
-            title="Remove saved connection"
-            @click="emit('remove', saved.id)"
+            :aria-label="`Settings for ${saved.name}`"
+            title="Connection settings"
+            @click="emit('manage', saved.id)"
           >
-            <AppIcon name="close" :size="13" />
+            <AppIcon name="settings" :size="16" />
           </button>
         </div>
       </section>
@@ -322,7 +381,11 @@ async function readPem(event: Event, field: 'tlsCa' | 'tlsCert' | 'tlsKey') {
               :type="showPassword ? 'text' : 'password'"
               maxlength="4096"
               autocomplete="current-password"
-              placeholder="Enter password"
+              :placeholder="
+                hasSavedPassword && !clearPassword
+                  ? 'Leave blank to keep saved password'
+                  : 'Enter password'
+              "
               :disabled="busy"
             /><button
               type="button"
@@ -336,6 +399,10 @@ async function readPem(event: Event, field: 'tlsCa' | 'tlsCert' | 'tlsKey') {
           ></label
         >
       </div>
+      <label v-if="hasSavedPassword" class="checkbox-label">
+        <input v-model="clearPassword" type="checkbox" />
+        <span>Remove saved password unless a new one is entered</span>
+      </label>
       <template v-if="isMongo">
         <label
           >Authentication database<input
@@ -345,9 +412,9 @@ async function readPem(event: Event, field: 'tlsCa' | 'tlsCert' | 'tlsKey') {
             @change="form.authSource ||= undefined"
         /></label>
         <p class="field-help">
-          Experimental · Read-only collection browsing. Leave username and password empty for
-          servers without authentication. Use a single host and port; SRV URLs and custom TLS
-          certificates are not supported yet.
+          Browse, query, and edit documents. Leave username and password empty for servers without
+          authentication. Use a single host and port; SRV URLs and custom TLS certificates are not
+          supported yet.
         </p>
       </template>
       <div v-if="!isSqlite" class="connection-tls">
@@ -372,9 +439,7 @@ async function readPem(event: Event, field: 'tlsCa' | 'tlsCert' | 'tlsKey') {
         <div>
           <div class="connection-option">
             <label class="checkbox-label"
-              ><input v-model="form.readOnly" type="checkbox" :disabled="isMongo" /><span
-                >Read-only mode</span
-              ></label
+              ><input v-model="form.readOnly" type="checkbox" /><span>Read-only mode</span></label
             >
             <HelpTooltip
               label="About read-only mode"
@@ -383,7 +448,7 @@ async function readPem(event: Event, field: 'tlsCa' | 'tlsCert' | 'tlsKey') {
           </div>
         </div>
         <div>
-          <div class="connection-option">
+          <div v-if="!initial" class="connection-option">
             <label class="checkbox-label save-toggle"
               ><input v-model="save" type="checkbox" :disabled="busy || !savingEnabled" /><span
                 >Save connection and credentials</span
@@ -395,7 +460,7 @@ async function readPem(event: Event, field: 'tlsCa' | 'tlsCert' | 'tlsKey') {
               text="Saving is unavailable. Configure the backend connection vault to enable it."
             />
           </div>
-          <label v-if="save && savingEnabled"
+          <label v-if="initial || (save && savingEnabled)"
             >Connection name<input
               v-model.trim="saveName"
               maxlength="128"
@@ -415,11 +480,15 @@ async function readPem(event: Event, field: 'tlsCa' | 'tlsCert' | 'tlsKey') {
       </button>
       <button class="button primary connect-button" type="submit" :disabled="locked">
         <span>{{
-          busy && !testing
-            ? 'Connecting…'
-            : form.allDatabases
-              ? 'Connect to instance'
-              : 'Connect to database'
+          initial
+            ? busy
+              ? 'Saving…'
+              : 'Save changes'
+            : busy && !testing
+              ? 'Connecting…'
+              : form.allDatabases
+                ? 'Connect to instance'
+                : 'Connect to database'
         }}</span><AppIcon name="arrow" />
       </button>
     </div>
@@ -518,13 +587,13 @@ async function readPem(event: Event, field: 'tlsCa' | 'tlsCert' | 'tlsKey') {
                   accept=".pem,.crt,.cer,.key"
                   @change="readPem($event, file.field)"
               /></label>
-              <span v-if="form[file.field]"
+              <span v-if="form[file.field] || (file.field === 'tlsKey' && retainTlsKey)"
                 >Loaded
                 <button
                   type="button"
                   class="text-button"
                   :aria-label="`Remove ${file.label}`"
-                  @click="form[file.field] = undefined"
+                  @click="removePem(file.field)"
                 >
                   Remove
                 </button></span

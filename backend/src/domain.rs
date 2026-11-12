@@ -67,6 +67,22 @@ impl UpdateDatabaseSettings {
     rename_all_fields = "camelCase"
 )]
 pub enum Mutation {
+    InsertDocument {
+        schema: String,
+        table: String,
+        document: Value,
+    },
+    ReplaceDocument {
+        schema: String,
+        table: String,
+        snapshot: String,
+        document: Value,
+    },
+    DeleteDocument {
+        schema: String,
+        table: String,
+        snapshot: String,
+    },
     Insert {
         schema: String,
         table: String,
@@ -248,6 +264,32 @@ pub struct SavedConnection {
 #[derive(Deserialize)]
 pub struct SaveConnection {
     pub name: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateSavedConnection {
+    pub name: String,
+    pub input: ConnectionInput,
+    #[serde(default)]
+    pub keep_password: bool,
+    #[serde(default)]
+    pub keep_tls_key: bool,
+}
+
+impl UpdateSavedConnection {
+    pub fn merge(&mut self, original: ConnectionInput) -> Result<(), &'static str> {
+        if (self.keep_password || self.keep_tls_key) && self.input.provider != original.provider {
+            return Err("Enter credentials for the new database type.");
+        }
+        if self.keep_password {
+            self.input.password = original.password;
+        }
+        if self.keep_tls_key {
+            self.input.tls_key = original.tls_key;
+        }
+        self.input.validate()
+    }
 }
 
 #[derive(Deserialize)]

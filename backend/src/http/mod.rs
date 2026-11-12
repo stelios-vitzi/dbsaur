@@ -95,7 +95,14 @@ pub(crate) fn router_with_services(
         )
         .route(
             "/api/connections/{id}",
-            axum::routing::delete(delete_connection),
+            get(connection_details)
+                .put(update_connection)
+                .delete(delete_connection)
+                .layer(DefaultBodyLimit::max(256 * 1024)),
+        )
+        .route(
+            "/api/connections/{id}/test",
+            post(test_saved_connection).layer(DefaultBodyLimit::max(256 * 1024)),
         )
         .route("/api/connections/{id}/connect", post(connect_saved))
         .route("/api/rows", get(rows))
@@ -105,7 +112,10 @@ pub(crate) fn router_with_services(
             "/api/geometry",
             post(geometry).layer(DefaultBodyLimit::max(2 * 1024 * 1024)),
         )
-        .route("/api/mutations", post(mutate))
+        .route(
+            "/api/mutations",
+            post(mutate).layer(DefaultBodyLimit::max(8 * 1024 * 1024)),
+        )
         .layer(DefaultBodyLimit::max(16 * 1024))
         .layer(middleware::from_fn(security_headers))
         .with_state(state)
@@ -186,9 +196,6 @@ fn ensure_writable(input: &ConnectionInput) -> AppResult<()> {
 }
 
 async fn test_input(state: &AppState, input: &mut ConnectionInput) -> AppResult<()> {
-    if input.provider == "mongodb" {
-        input.read_only = true;
-    }
     input.validate().map_err(invalid)?;
     let adapter = state.database.resolve(&input.provider)?;
     if input.all_databases {
@@ -343,6 +350,57 @@ async fn delete_connection(
     repository(&state)?.delete(&id).await?;
     Ok(StatusCode::NO_CONTENT)
 }
+async fn connection_details(
+    State(state): State<Shared>,
+    Path(id): Path<String>,
+) -> AppResult<Json<serde_json::Value>> {
+    let store = repository(&state)?;
+    let saved = store
+        .list()
+        .await?
+        .into_iter()
+        .find(|saved| saved.id == id)
+        .ok_or(AppError(ErrorKind::NotFound, "Saved connection not found."))?;
+    let mut input = store.load(&id).await?;
+    let has_password = !input.password.is_empty();
+    let has_tls_key = input.tls_key.is_some();
+    input.password.clear();
+    input.tls_key = None;
+    Ok(Json(
+        serde_json::json!({ "id": id, "name": saved.name, "input": input, "hasPassword": has_password, "hasTlsKey": has_tls_key }),
+    ))
+}
+async fn update_connection(
+    State(state): State<Shared>,
+    Path(id): Path<String>,
+    Json(mut request): Json<UpdateSavedConnection>,
+) -> AppResult<StatusCode> {
+    let name = request.name.trim().to_owned();
+    if name.is_empty()
+        || name.len() > 128
+        || name.chars().any(char::is_control)
+        || request.input.provider == "demo"
+    {
+        return Err(invalid(
+            "Enter a connection name of at most 128 characters for a real database.",
+        ));
+    }
+    state.database.resolve(&request.input.provider)?;
+    let store = repository(&state)?;
+    request.merge(store.load(&id).await?).map_err(invalid)?;
+    store.update(&id, &name, &request.input).await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+async fn test_saved_connection(
+    State(state): State<Shared>,
+    Path(id): Path<String>,
+    Json(mut request): Json<UpdateSavedConnection>,
+) -> AppResult<Json<serde_json::Value>> {
+    request
+        .merge(repository(&state)?.load(&id).await?)
+        .map_err(invalid)?;
+    test_connection(State(state), Json(request.input)).await
+}
 async fn connect_saved(
     State(state): State<Shared>,
     headers: HeaderMap,
@@ -468,6 +526,16 @@ async fn mutate(
     ensure_writable(&input)?;
     if request.confirmation != "APPLY" {
         return Err(invalid("Review the change and type APPLY to confirm."));
+    }
+    if input.provider != "mongodb"
+        && matches!(
+            request.mutation,
+            Mutation::InsertDocument { .. }
+                | Mutation::ReplaceDocument { .. }
+                | Mutation::DeleteDocument { .. }
+        )
+    {
+        return Err(invalid("Document changes require a MongoDB connection."));
     }
     let _permit = state
         .operations

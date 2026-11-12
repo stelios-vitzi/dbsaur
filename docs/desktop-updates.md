@@ -84,8 +84,10 @@ Linux x64, and both architectures of the universal macOS app. The app reads
 Only newer versions are offered; draft releases are not offered. Manually
 published releases need the same complete manifest and correctly signed assets.
 The existing build matrix and all dependency audit gates still block publication.
-Native builds and publication run only when a version tag matching `v<major>.<minor>.<patch>`
-is pushed, for example `git tag v0.2.0` followed by `git push origin v0.2.0`.
+Native builds and publication run only when a version tag matching `<major>.<minor>.<patch>`
+or `v<major>.<minor>.<patch>` is pushed, for example `git tag 0.2.0` followed by
+`git push origin 0.2.0`. The tagged commit must contain this workflow; an already
+pushed tag does not start a new run when later branch commits change the workflow.
 The GitHub Release uses that existing tag. Branch pushes, pull requests, and manual
 dispatch do not trigger the desktop release workflow. CI checks and security audits
 keep their existing triggers; the CI frontend build runs only on version tags.

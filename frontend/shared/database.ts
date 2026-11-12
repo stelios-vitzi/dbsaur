@@ -22,6 +22,17 @@ export interface SavedConnection {
   id: string
   name: string
 }
+export interface SavedConnectionDetails extends SavedConnection {
+  input: ConnectionInput
+  hasPassword: boolean
+  hasTlsKey: boolean
+}
+export interface UpdateSavedConnection {
+  name: string
+  input: ConnectionInput
+  keepPassword: boolean
+  keepTlsKey: boolean
+}
 export interface Session {
   provider: string
   database: string
@@ -114,6 +125,15 @@ export interface IndexInfo {
 }
 
 export type Mutation =
+  | { action: 'insertDocument'; schema: string; table: string; document: Record<string, unknown> }
+  | {
+      action: 'replaceDocument'
+      schema: string
+      table: string
+      snapshot: string
+      document: Record<string, unknown>
+    }
+  | { action: 'deleteDocument'; schema: string; table: string; snapshot: string }
   | {
       action: 'alterIndex'
       schema: string

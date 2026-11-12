@@ -81,6 +81,7 @@ pub trait DatabaseAdapter: Send + Sync {
 pub trait ConnectionRepository: Send + Sync {
     async fn list(&self) -> AppResult<Vec<SavedConnection>>;
     async fn save(&self, name: &str, input: &ConnectionInput) -> AppResult<String>;
+    async fn update(&self, id: &str, name: &str, input: &ConnectionInput) -> AppResult<()>;
     async fn load(&self, id: &str) -> AppResult<ConnectionInput>;
     async fn delete(&self, id: &str) -> AppResult<()>;
 }

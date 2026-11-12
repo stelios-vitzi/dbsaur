@@ -10,6 +10,8 @@ import type {
   TableInfo,
   TablePage,
   SavedConnection,
+  SavedConnectionDetails,
+  UpdateSavedConnection,
   Mutation,
 } from '../../shared/database'
 
@@ -19,6 +21,7 @@ export function useDatabase() {
   const session = ref<Session | null>(null)
   const databases = ref<string[]>([])
   const savedConnections = ref<SavedConnection[]>([])
+  const activeSavedConnectionId = ref<string>()
   const savingEnabled = ref(false)
   const switching = ref(false)
   const tables = ref<TableInfo[]>([])
@@ -48,7 +51,11 @@ export function useDatabase() {
   let requestVersion = 0
   let controller: AbortController | undefined
   const preferences = createConnectionPreferences()
-  const { setActiveConnectionKey, storedDatabase, rememberDatabase, forgetDatabase } = preferences
+  const { storedDatabase, rememberDatabase, forgetDatabase } = preferences
+  function setActiveConnectionKey(key: string | undefined) {
+    preferences.setActiveConnectionKey(key)
+    activeSavedConnectionId.value = key?.startsWith('saved:') ? key.slice(6) : undefined
+  }
 
   function message(cause: unknown, operation?: 'save') {
     const failure = cause as { data?: { message?: string }; statusCode?: number; status?: number }
@@ -286,8 +293,37 @@ export function useDatabase() {
       if (preferences.activeKey === `saved:${id}`) setActiveConnectionKey(undefined)
       toast.show('Saved connection removed.')
       await loadSavedConnections()
+      return true
     } catch (cause) {
       connectionError.value = message(cause)
+      return false
+    }
+  }
+  async function loadSavedConnection(id: string) {
+    try {
+      return await $fetch<SavedConnectionDetails>(`/api/connections/${encodeURIComponent(id)}`)
+    } catch (cause) {
+      throw new Error(message(cause))
+    }
+  }
+  async function updateSavedConnection(id: string, update: UpdateSavedConnection) {
+    try {
+      await $fetch(`/api/connections/${encodeURIComponent(id)}`, { method: 'PUT', body: update })
+      forgetDatabase(`saved:${id}`)
+      await loadSavedConnections()
+      toast.show('Connection settings saved. Reconnect to use the changes.')
+    } catch (cause) {
+      throw new Error(message(cause))
+    }
+  }
+  async function testSavedConnection(id: string, update: UpdateSavedConnection) {
+    try {
+      return await $fetch<{ ok: boolean; elapsedMs: number }>(
+        `/api/connections/${encodeURIComponent(id)}/test`,
+        { method: 'POST', body: update },
+      )
+    } catch (cause) {
+      throw new Error(message(cause))
     }
   }
   async function disconnect() {
@@ -369,6 +405,7 @@ export function useDatabase() {
   }
   onMounted(async () => {
     preferences.restore()
+    setActiveConnectionKey(preferences.activeKey)
     try {
       await loadSavedConnections()
     } catch {
@@ -395,12 +432,16 @@ export function useDatabase() {
     providers,
     databases,
     savedConnections,
+    activeSavedConnectionId,
     savingEnabled,
     switching,
     switchDatabase,
     chooseDatabaseTable,
     refreshExplorer,
     deleteSavedConnection,
+    loadSavedConnection,
+    updateSavedConnection,
+    testSavedConnection,
     session,
     tables,
     tablesLoading,

@@ -4,6 +4,133 @@ use axum::{body::Body, http::Request};
 use http_body_util::BodyExt;
 use tower::ServiceExt;
 
+#[tokio::test]
+async fn saved_connection_settings_redact_secrets_and_preserve_the_active_session() {
+    let vault = Arc::new(
+        adapters::vault::SqliteVault::open(":memory:", &[6; 32])
+            .await
+            .unwrap(),
+    );
+    let original: ConnectionInput = serde_json::from_value(serde_json::json!({
+        "provider":"postgres", "host":"old-host", "port":5432, "database":"app", "username":"alice",
+        "password":"saved-secret", "ssl":true,
+        "tlsCert":"-----BEGIN CERTIFICATE-----test-----END CERTIFICATE-----",
+        "tlsKey":"-----BEGIN PRIVATE KEY-----private-test-----END PRIVATE KEY-----"
+    }))
+    .unwrap();
+    let id = vault.save("Original", &original).await.unwrap();
+    let app = router_with_services(
+        false,
+        Some(vault.clone()),
+        DatabaseService::new(vec![Arc::new(InstanceAdapter)]),
+    );
+    let path = format!("/api/connections/{id}");
+    let (status, token, _) = call(
+        &app,
+        "POST",
+        &format!("{path}/connect"),
+        "",
+        serde_json::Value::Null,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let (status, _, details) = call(&app, "GET", &path, "", serde_json::Value::Null).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(details["input"]["password"], "");
+    assert!(details["input"]["tlsKey"].is_null());
+    assert_eq!(details["hasPassword"], true);
+    assert_eq!(details["hasTlsKey"], true);
+    assert!(!details.to_string().contains("saved-secret"));
+    assert!(!details.to_string().contains("private-test"));
+    let mut update = serde_json::json!({ "name":"Renamed", "input":details["input"], "keepPassword":true, "keepTlsKey":true });
+    update["input"]["host"] = "new-host".into();
+    update["input"]["readOnly"] = true.into();
+    assert_eq!(
+        call(
+            &app,
+            "POST",
+            &format!("{path}/test"),
+            &token,
+            update.clone()
+        )
+        .await
+        .0,
+        StatusCode::OK
+    );
+    assert_eq!(vault.load(&id).await.unwrap().host, "old-host");
+    assert_eq!(
+        call(&app, "PUT", &path, &token, update.clone()).await.0,
+        StatusCode::NO_CONTENT
+    );
+    let saved = vault.load(&id).await.unwrap();
+    assert_eq!(saved.host, "new-host");
+    assert!(saved.read_only);
+    assert_eq!(saved.password, original.password);
+    assert_eq!(saved.tls_key, original.tls_key);
+    let list = vault.list().await.unwrap();
+    assert_eq!(list.len(), 1);
+    assert_eq!(list[0].id, id);
+    assert_eq!(list[0].name, "Renamed");
+    let session = call(&app, "GET", "/api/session", &token, serde_json::Value::Null)
+        .await
+        .2;
+    assert_eq!(session["host"], "old-host");
+    assert_eq!(session["readOnly"], false);
+    let mut invalid = update.clone();
+    invalid["input"]["provider"] = "mysql".into();
+    assert_eq!(
+        call(&app, "PUT", &path, &token, invalid).await.0,
+        StatusCode::BAD_REQUEST
+    );
+    let mut invalid = update.clone();
+    invalid["name"] = " ".into();
+    assert_eq!(
+        call(&app, "PUT", &path, &token, invalid).await.0,
+        StatusCode::BAD_REQUEST
+    );
+    update["keepPassword"] = false.into();
+    update["input"]["password"] = "replacement-secret".into();
+    assert_eq!(
+        call(&app, "PUT", &path, &token, update.clone()).await.0,
+        StatusCode::NO_CONTENT
+    );
+    assert_eq!(
+        vault.load(&id).await.unwrap().password,
+        "replacement-secret"
+    );
+    update["input"]["password"] = "".into();
+    update["input"]["ssl"] = false.into();
+    update["input"]["tlsCert"] = serde_json::Value::Null;
+    update["keepTlsKey"] = false.into();
+    assert_eq!(
+        call(&app, "PUT", &path, &token, update).await.0,
+        StatusCode::NO_CONTENT
+    );
+    let saved = vault.load(&id).await.unwrap();
+    assert!(saved.password.is_empty());
+    assert!(saved.tls_key.is_none());
+    assert!(vault.update("missing", "Missing", &original).await.is_err());
+    assert_eq!(
+        call(&app, "DELETE", &path, &token, serde_json::Value::Null)
+            .await
+            .0,
+        StatusCode::NO_CONTENT
+    );
+    assert!(vault.list().await.unwrap().is_empty());
+    assert_eq!(
+        call(&app, "GET", "/api/session", &token, serde_json::Value::Null)
+            .await
+            .0,
+        StatusCode::OK
+    );
+    assert_eq!(
+        call(&app, "GET", &path, &token, serde_json::Value::Null)
+            .await
+            .0,
+        StatusCode::NOT_FOUND
+    );
+}
+
 #[test]
 fn geometry_preview_input_is_bounded_hexadecimal() {
     for value in ["", "0", "010g", "\\x0100", "'); SELECT 1;--"] {

@@ -28,7 +28,7 @@ SmartScreen warnings. macOS packages use ad-hoc signing without Developer ID
 notarization and can trigger Gatekeeper warnings. See
 [operating-system trust](docs/desktop-updates.md#operating-system-trust).
 
-Online audits were rerun on 12 November 2026 after adding SQLite support: npm reports zero
+Online audits were rerun on 12 November 2026 after the MongoDB and saved connection updates: npm reports zero
 findings. All three Cargo lockfiles have no vulnerability findings; the desktop
 glib and proc-macro-error warnings remain visible. Native build and signed update
 verification are separate gates.
@@ -64,6 +64,10 @@ Tauri application. There is no standalone server or multi-user deployment mode.
   requires typing its name and confirming Save; dependent keys/indexes can change.
 - Credentials stay in bounded local process memory unless explicitly saved to the
   encrypted vault. Restrict its directory and keep the key separate from backups.
+  Connection settings return redacted passwords and TLS private keys. Unchanged
+  secrets are retained on the backend; replacements are encrypted with a fresh
+  nonce under the same saved connection ID. Saving or testing settings does not
+  replace the active session.
   Saved SQL, exports, clipboard contents, webview caches, OS memory/dumps,
   and database logs need their own protection.
 - Index edits compare the displayed metadata before opening the write operation.
@@ -153,19 +157,29 @@ These are point-in-time checks for published advisories; they cannot detect
 vulnerabilities that have not been disclosed or added to advisory databases.
 Scans do not replace application security review or license review.
 
-## Experimental MongoDB boundary
+## MongoDB boundary
 
-MongoDB connections are forced read only by the embedded API and the adapter exposes
-only ping, database/collection discovery, and find operations. No arbitrary commands,
-aggregation pipelines, or writes are accepted; recursive filter validation rejects
-server-side JavaScript operators. This does not replace server read-only privileges.
+MongoDB browsing and aggregation queries are read only. Aggregation uses an explicit
+stage allowlist, recursively validates facets, and rejects write stages and
+server-side JavaScript. Read-only connection mode blocks mutations at the API and
+adapter. Writes use separate insert/replace/delete document operations, require
+confirmation, and target one document. Replacement/deletion use an atomic original
+BSON comparison with simple collation; partial projections and aggregation results
+never expose edit snapshots. System collections cannot be edited. Original BSON
+snapshots preserve field order and exact BSON types alongside the JSON view.
+These safeguards do not replace database privileges.
+
 Results use canonical Extended JSON to preserve BSON types and exact numbers. Reads
 have a 10-second deadline, a 1,001-document cursor limit (including the pagination
-sentinel), and an 8 MiB serialized-page budget. Large BSON documents can be received
-before that budget is checked. TLS validates server certificates and hostnames using
-public trust roots; custom CA/client certificates and SRV URIs are not supported yet.
+sentinel), and an 8 MiB serialized-page budget including snapshots. Large BSON
+documents can be received before that budget is checked. Write payloads are limited
+to 1 MiB of Extended JSON; snapshots to 1 MiB of BSON. Writes have a 15-second client
+deadline; a timeout does not prove that a write was rolled back. TLS validates server
+certificates and hostnames using public trust roots; custom CA/client certificates
+and SRV URIs are not supported yet.
 
-Online audits were rerun on 12 November 2026 for the MongoDB dependency graph:
+Online audits were rerun on 12 November 2026 after adding MongoDB editing and the
+CodeMirror JSON language package:
 npm reports zero vulnerabilities and all three Cargo lockfiles have no vulnerability
 findings. The existing desktop glib unsoundness and proc-macro-error maintenance
 warnings remain visible. These results supersede the SQLite-era scans above.

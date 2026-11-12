@@ -18,6 +18,21 @@ fn unavailable() -> AppError {
     )
 }
 impl SqliteVault {
+    fn encrypted(&self, id: &str, input: &ConnectionInput) -> AppResult<(Vec<u8>, Vec<u8>)> {
+        let nonce = Nonce::generate();
+        let plaintext = serde_json::to_vec(input).map_err(|_| unavailable())?;
+        let ciphertext = self
+            .cipher
+            .encrypt(
+                &nonce,
+                Payload {
+                    msg: &plaintext,
+                    aad: id.as_bytes(),
+                },
+            )
+            .map_err(|_| unavailable())?;
+        Ok((nonce.to_vec(), ciphertext))
+    }
     pub async fn open(path: &str, key: &[u8; 32]) -> AppResult<Self> {
         let path = path.to_owned();
         let connection = tokio::task::spawn_blocking(move || -> rusqlite::Result<Connection> {
@@ -66,18 +81,7 @@ impl ConnectionRepository for SqliteVault {
     }
     async fn save(&self, name: &str, input: &ConnectionInput) -> AppResult<String> {
         let id = uuid::Uuid::new_v4().to_string();
-        let nonce = Nonce::generate();
-        let plaintext = serde_json::to_vec(input).map_err(|_| unavailable())?;
-        let ciphertext = self
-            .cipher
-            .encrypt(
-                &nonce,
-                Payload {
-                    msg: &plaintext,
-                    aad: id.as_bytes(),
-                },
-            )
-            .map_err(|_| unavailable())?;
+        let (nonce, ciphertext) = self.encrypted(&id, input)?;
         let saved_id = id.clone();
         let name = name.to_owned();
         let affected = self.with_connection(move |connection| {
@@ -86,6 +90,23 @@ impl ConnectionRepository for SqliteVault {
         (affected == 1)
             .then_some(id)
             .ok_or_else(|| invalid("Remove a saved connection before adding more (limit 100)."))
+    }
+    async fn update(&self, id: &str, name: &str, input: &ConnectionInput) -> AppResult<()> {
+        let (nonce, ciphertext) = self.encrypted(id, input)?;
+        let id = id.to_owned();
+        let name = name.to_owned();
+        let affected = self
+            .with_connection(move |connection| {
+                connection.execute(
+                    "UPDATE saved_connections SET name = ?, nonce = ?, ciphertext = ? WHERE id = ?",
+                    params![name, nonce, ciphertext, id],
+                )
+            })
+            .await?;
+        if affected != 1 {
+            return Err(AppError(ErrorKind::NotFound, "Saved connection not found."));
+        }
+        Ok(())
     }
     async fn load(&self, id: &str) -> AppResult<ConnectionInput> {
         let saved_id = id.to_owned();

@@ -27,7 +27,7 @@ function evaluate(source, runtime, imports = {}) {
 function source(path) {
   return readFileSync(new URL(`../app/${path}`, import.meta.url), 'utf8')
 }
-function setup(t) {
+function setup(t, respond) {
   const writes = []
   const scope = vue.effectScope()
   const runtime = {
@@ -35,6 +35,7 @@ function setup(t) {
     onMounted: () => {},
     $fetch: async (url, options) => {
       writes.push({ url, ...options })
+      if (respond) return respond(url, options)
       return { affectedRows: 1 }
     },
   }
@@ -65,6 +66,38 @@ const update = () => ({
   table: 'items',
   original: { id: '1' },
   values: { name: 'new' },
+})
+
+test('active connection settings track only the saved connection used to connect', async (t) => {
+  const { db } = setup(t, (url) => {
+    if (url === '/api/connections') return { enabled: true, connections: [] }
+    if (url === '/api/tables') return []
+    return {
+      provider: 'postgres',
+      host: 'localhost',
+      database: 'app',
+      allDatabases: false,
+      readOnly: false,
+    }
+  })
+  await db.connect('saved-one')
+  assert.equal(db.activeSavedConnectionId.value, 'saved-one')
+  await db.connect('saved-two')
+  assert.equal(db.activeSavedConnectionId.value, 'saved-two')
+  await db.deleteSavedConnection('saved-one')
+  assert.equal(db.activeSavedConnectionId.value, 'saved-two')
+  await db.disconnect()
+  assert.equal(db.activeSavedConnectionId.value, undefined)
+  await db.connect({
+    provider: 'demo',
+    host: '',
+    port: 0,
+    database: '',
+    username: '',
+    password: '',
+    ssl: false,
+  })
+  assert.equal(db.activeSavedConnectionId.value, undefined)
 })
 
 test('Save sends the staged snapshot once; no write happens before confirmation', async (t) => {

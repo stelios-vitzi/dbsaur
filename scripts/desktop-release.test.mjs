@@ -23,6 +23,23 @@ import {
   validateSigningConfiguration,
 } from './desktop-release.mjs'
 
+test('release workflow accepts numeric tags with or without v and signs both formats', () => {
+  const workflow = readFileSync(
+    new URL('../.github/workflows/desktop-release.yml', import.meta.url),
+    'utf8',
+  )
+  // Keep the two GitHub glob patterns explicit; + is supported by GitHub tag filters.
+  assert.ok(workflow.includes("tags: ['[0-9]+.[0-9]+.[0-9]+', 'v[0-9]+.[0-9]+.[0-9]+']"))
+  assert.ok(!workflow.includes("startsWith(github.ref, 'refs/tags/v')"))
+  assert.equal(
+    (workflow.match(/RELEASE_SIGNED: .*startsWith\(github.ref, 'refs\/tags\/'\)/g) || []).length,
+    2,
+  )
+  assert.ok(
+    workflow.includes("if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')"),
+  )
+})
+
 test('release preflight requires both signing keys without exposing their contents', () => {
   assert.doesNotThrow(() => validateSigningConfiguration({ RELEASE_SIGNED: 'false' }))
   assert.throws(

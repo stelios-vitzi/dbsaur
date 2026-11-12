@@ -1,8 +1,8 @@
 # DBsaur
 
-Experimental MongoDB collection browsing is available alongside the SQL providers. See the [MongoDB guide](docs/user-guide.md#mongodb-experimental) for supported connections and JSON filters.
+MongoDB supports highlighted JSON browsing, document editing, and read-only aggregation queries. See the [MongoDB guide](docs/user-guide.md#mongodb) for connections and examples.
 
-A desktop database workspace for PostgreSQL, MySQL, MariaDB, SQL Server, and SQLite.
+A desktop database workspace for PostgreSQL, MySQL, MariaDB, SQL Server, SQLite, and MongoDB.
 Browse data, run queries, edit records, manage schemas, and preview PostGIS
 geometry from a single local application.
 
@@ -149,7 +149,7 @@ See [SECURITY.md](SECURITY.md) for current findings and vulnerability reporting.
 
 The **Desktop build and release** workflow publishes a combined GitHub Release
 after all native builds and dependency audits pass, only when a version tag such
-as `v0.2.0` is pushed. Branch pushes, pull requests, and manual runs do not build
+as `0.2.0` or `v0.2.0` is pushed. Branch pushes, pull requests, and manual runs do not build
 packages. Ordinary CI checks and security audits keep their existing triggers;
 the CI frontend build runs only on version tags. Its **Release outcome** summary
 reports blocking gates. A successful ordinary **CI** run alone does not publish a release.
