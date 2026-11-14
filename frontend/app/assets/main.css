@@ -1587,20 +1587,15 @@ kbd {
 
 .attribution-logo {
   display: inline-block;
-  position: relative;
   width: 20px;
   height: 20px;
-  overflow: hidden;
   flex: none;
 }
 
 .attribution-logo img {
-  position: absolute;
-  width: 31.91px;
-  height: 31.91px;
-  max-width: none;
-  left: -6.62px;
-  top: -8.06px;
+  display: block;
+  width: 100%;
+  height: 100%;
   filter: brightness(0) invert(1);
 }
 
