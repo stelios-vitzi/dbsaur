@@ -162,7 +162,7 @@ pub struct ConnectionInput {
     pub ssl: bool,
     #[serde(default)]
     pub all_databases: bool,
-    #[serde(default)]
+    #[serde(default = "default_read_only")]
     pub read_only: bool,
     #[serde(default)]
     pub tls_ca: Option<String>,
@@ -172,6 +172,10 @@ pub struct ConnectionInput {
     pub tls_key: Option<String>,
     #[serde(default)]
     pub auth_source: Option<String>,
+}
+
+fn default_read_only() -> bool {
+    true
 }
 
 impl ConnectionInput {
@@ -259,6 +263,19 @@ impl ConnectionInput {
 pub struct SavedConnection {
     pub id: String,
     pub name: String,
+}
+
+#[derive(Deserialize, Serialize)]
+pub struct VaultProfile {
+    pub name: String,
+    pub input: ConnectionInput,
+}
+
+#[derive(Deserialize)]
+pub struct VaultTransfer {
+    pub confirmation: String,
+    #[serde(default)]
+    pub profiles: Vec<VaultProfile>,
 }
 
 #[derive(Deserialize)]

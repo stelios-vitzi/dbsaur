@@ -146,8 +146,26 @@ fn projection(columns: &[Column]) -> String {
         .collect::<Vec<_>>()
         .join(", ")
 }
+// SQL Server requires WITH at statement scope, outside the derived table used
+// for bounded pagination. Move the parsed CTEs, never split user SQL by text.
+fn query_source(sql: &str) -> AppResult<(String, String)> {
+    use sqlparser::{ast::Statement, dialect::MsSqlDialect, parser::Parser};
+    let mut statements = Parser::parse_sql(&MsSqlDialect {}, sql)
+        .map_err(|_| invalid("Run a supported SELECT query."))?;
+    let Some(Statement::Query(query)) = statements.first_mut() else {
+        return Err(invalid("Run a supported SELECT query."));
+    };
+    let prefix = query
+        .with
+        .take()
+        .map(|with| format!("{with} "))
+        .unwrap_or_default();
+    let body = super::sql::canonical(&statements[0], &MsSqlDialect {})?;
+    Ok((prefix, format!("({body})")))
+}
 async fn page(
     client: &mut SqlClient,
+    prefix: &str,
     source: &str,
     columns: Vec<Column>,
     order: &str,
@@ -155,7 +173,7 @@ async fn page(
     size: u32,
 ) -> AppResult<TablePage> {
     let sql = format!(
-        "SELECT {} FROM {source} AS source ORDER BY {order} OFFSET @P1 ROWS FETCH NEXT @P2 ROWS ONLY",
+        "{prefix}SELECT {} FROM {source} AS source ORDER BY {order} OFFSET @P1 ROWS FETCH NEXT @P2 ROWS ONLY",
         projection(&columns)
     );
     let offset = i64::from(number) * i64::from(size);
@@ -186,7 +204,7 @@ async fn page(
                 .collect::<AppResult<_>>()
         })
         .collect::<AppResult<_>>()?;
-    let count_sql = format!("SELECT COUNT_BIG(*) AS total FROM {source} AS dbsaur_count");
+    let count_sql = format!("{prefix}SELECT COUNT_BIG(*) AS total FROM {source} AS dbsaur_count");
     let count = client
         .query(count_sql, &[])
         .await
@@ -381,6 +399,7 @@ impl DatabaseAdapter for SqlServerAdapter {
         };
         page(
             &mut c,
+            "",
             &format!(
                 "{}.{}",
                 quote_identifier(&query.schema),
@@ -425,8 +444,8 @@ impl DatabaseAdapter for SqlServerAdapter {
         if let Some(plan) = &edit_plan {
             sql = plan.sql.clone();
         }
-        let source = format!("({sql})");
-        let describe = format!("SELECT * FROM {source} AS source");
+        let (prefix, source) = query_source(&sql)?;
+        let describe = format!("{prefix}SELECT * FROM {source} AS source");
         // Describing the derived SELECT validates it with SQL Server without executing it.
         let records=c.query("SELECT name,system_type_name,is_nullable,error_number FROM sys.dm_exec_describe_first_result_set(@P1,NULL,0) WHERE is_hidden=0 OR error_number IS NOT NULL ORDER BY column_ordinal",&[&describe]).await.map_err(driver_error)?.into_first_result().await.map_err(driver_error)?;
         let mut names = std::collections::HashSet::new();
@@ -438,7 +457,7 @@ impl DatabaseAdapter for SqlServerAdapter {
                 .is_some()
             {
                 return Err(invalid(
-                    "Check SQL Server SELECT syntax and aliases. Use TOP or OFFSET with an inner ORDER BY; CTEs are not supported here.",
+                    "Check SQL Server SELECT syntax and aliases. Use TOP or OFFSET with an inner ORDER BY.",
                 ));
             }
             let name = text(row, "name")?;
@@ -461,7 +480,16 @@ impl DatabaseAdapter for SqlServerAdapter {
         if columns.is_empty() {
             return Err(invalid("Run a SELECT query that returns named columns."));
         }
-        let mut result = page(&mut c, &source, columns, "(SELECT NULL)", number, size).await?;
+        let mut result = page(
+            &mut c,
+            &prefix,
+            &source,
+            columns,
+            "(SELECT NULL)",
+            number,
+            size,
+        )
+        .await?;
         if let Some(plan) = edit_plan {
             super::query_editing::finish(&mut result, plan)?;
         }
@@ -470,6 +498,19 @@ impl DatabaseAdapter for SqlServerAdapter {
 }
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn ctes_stay_at_statement_scope_for_pagination_and_counts() {
+        let sql = super::super::read_query::select(
+            "WITH x AS (SELECT 1 AS n), y AS (SELECT n FROM x) SELECT n FROM y",
+            &sqlparser::dialect::MsSqlDialect {},
+        )
+        .unwrap();
+        let (prefix, source) = super::query_source(&sql).unwrap();
+        assert!(prefix.starts_with("WITH x AS"));
+        assert!(prefix.contains("y AS"));
+        assert_eq!(source, "(SELECT n FROM y)");
+        assert_eq!(super::query_source("SELECT 1 AS n").unwrap().0, "");
+    }
     #[test]
     fn identifiers_are_quoted() {
         assert_eq!(

@@ -119,6 +119,50 @@ async fn sqlite_browsing_metadata_and_exact_values() {
 }
 
 #[tokio::test]
+async fn sqlite_direct_query_projections_keep_editable_snapshots_and_generated_fields_locked() {
+    let fixture = Fixture::new();
+    let adapter = SqliteAdapter;
+    let result = adapter
+        .query(
+            &fixture.input,
+            &query("SELECT note AS label, computed FROM \"odd\"\"table\""),
+        )
+        .await
+        .unwrap();
+    let editing = result.editing.unwrap();
+    assert_eq!(editing.columns["label"], "note");
+    assert_eq!(editing.originals[0]["id"], "9007199254740993");
+    assert!(!result.columns[0].read_only);
+    assert!(result.columns[1].read_only);
+    for sql in [
+        "SELECT * FROM example_view",
+        "SELECT count(*) AS n FROM parent",
+        "SELECT p.id FROM parent p JOIN parent q ON p.id = q.id",
+    ] {
+        assert!(
+            adapter
+                .query(&fixture.input, &query(sql))
+                .await
+                .unwrap()
+                .editing
+                .is_none()
+        );
+    }
+    let locked = ConnectionInput {
+        read_only: true,
+        ..fixture.input.clone()
+    };
+    assert!(
+        adapter
+            .query(&locked, &query("SELECT * FROM parent"))
+            .await
+            .unwrap()
+            .editing
+            .is_none()
+    );
+}
+
+#[tokio::test]
 async fn sqlite_writes_are_confirmed_separate_atomic_and_detect_stale_rows() {
     let fixture = Fixture::new();
     let adapter = SqliteAdapter;

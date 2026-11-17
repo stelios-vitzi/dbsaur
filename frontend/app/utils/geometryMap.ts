@@ -40,12 +40,42 @@ export function geometryMapStyle(
     version: 8,
     ...basemap,
     sources: {
+      ...(!basemap
+        ? {
+            'offline-grid': {
+              type: 'geojson' as const,
+              data: {
+                type: 'FeatureCollection' as const,
+                features: [
+                  ...Array.from({ length: 35 }, (_, i) => [
+                    [(i - 17) * 10, -85],
+                    [(i - 17) * 10, 85],
+                  ]),
+                  ...Array.from({ length: 17 }, (_, i) => [
+                    [-180, (i - 8) * 10],
+                    [180, (i - 8) * 10],
+                  ]),
+                ].map((coordinates) => ({
+                  type: 'Feature' as const,
+                  properties: {},
+                  geometry: { type: 'LineString' as const, coordinates },
+                })),
+              },
+            },
+          }
+        : {}),
       ...basemap?.sources,
       'webdb-geometry': { type: 'geojson', data: { type: 'Feature', properties: {}, geometry } },
     },
     layers: [
       ...(basemap?.layers ?? [
         { id: 'background', type: 'background' as const, paint: { 'background-color': '#edf1ef' } },
+        {
+          id: 'offline-grid',
+          type: 'line' as const,
+          source: 'offline-grid',
+          paint: { 'line-color': '#b7c5c0', 'line-width': 1 },
+        },
       ]),
       {
         id: 'webdb-geometry-fill',

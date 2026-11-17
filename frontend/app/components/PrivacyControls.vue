@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { onMounted, useTemplateRef } from 'vue'
+import { onMounted, useTemplateRef, reactive } from 'vue'
+import { loadMapPreferences, saveMapPreferences } from '../utils/mapPreferences'
 import { useToast } from '../composables/useToast'
 import AppIcon from './AppIcon.vue'
 
@@ -7,6 +8,15 @@ import { RouterLink } from 'vue-router'
 import { privacyConfig, validPrivacyChoice } from '../utils/privacy'
 const dialog = useTemplateRef<HTMLDialogElement>('dialog')
 const toast = useToast()
+const maps = reactive(loadMapPreferences())
+function saveMaps() {
+  try {
+    saveMapPreferences(maps)
+    toast.show('Map preferences saved. Reopen map previews to apply them.')
+  } catch (cause) {
+    toast.show(cause instanceof Error ? cause.message : 'Could not save map preferences.', 'error')
+  }
+}
 let trigger: HTMLElement | null = null
 function open(event?: MouseEvent) {
   trigger = event?.currentTarget instanceof HTMLElement ? event.currentTarget : null
@@ -86,6 +96,22 @@ onMounted(() => {
       queries, and results stay between your computer and that database.
     </p>
     <h3>Necessary storage only</h3>
+    <fieldset>
+      <legend>Map backgrounds</legend>
+      <p>
+        Offline by default. Enabling tiles shares your IP and viewed area with your chosen server.
+      </p>
+      <label><input v-model="maps.enabled" type="checkbox" /> Enable tile requests</label>
+      <label
+        >XYZ tiles or vector style JSON URL<input
+          v-model="maps.url"
+          placeholder="https://tiles.example/{z}/{x}/{y}.png"
+      /></label>
+      <label>Attribution<input v-model="maps.attribution" maxlength="1024" /></label>
+      <button type="button" class="button secondary small" @click="saveMaps">
+        Save map preferences
+      </button>
+    </fieldset>
     <p>
       We use a local session cookie to keep you connected. Queries are saved in the app only when
       you choose to save them. Saved connections are encrypted in your local application data

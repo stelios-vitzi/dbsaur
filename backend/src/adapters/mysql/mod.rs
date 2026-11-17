@@ -10,6 +10,16 @@ use sqlx::{
 use std::{collections::BTreeMap, time::Duration};
 
 pub struct MySqlAdapter;
+fn connection_error(error: sqlx::Error) -> AppError {
+    if let sqlx::Error::Configuration(detail) = &error
+        && detail.to_string().starts_with("RSA auth backend disabled;")
+    {
+        return invalid(
+            "This MySQL account requires verified TLS for authentication, including on local connections. Enable TLS and configure a trusted CA certificate.",
+        );
+    }
+    error.into()
+}
 // MariaDB shares the wire protocol and metadata adapter, with its own timeout setup.
 pub(crate) async fn connect(input: &ConnectionInput) -> AppResult<MySqlConnection> {
     connect_mode(input, true).await
@@ -43,7 +53,8 @@ async fn connect_mode(input: &ConnectionInput, read_only: bool) -> AppResult<MyS
         MySqlConnection::connect_with(&options),
     )
     .await
-    .map_err(|_| AppError(ErrorKind::Timeout, "Database connection timed out."))??;
+    .map_err(|_| AppError(ErrorKind::Timeout, "Database connection timed out."))?
+    .map_err(connection_error)?;
     sqlx::query("SET SESSION autocommit = 1")
         .execute(&mut connection)
         .await?;
@@ -560,6 +571,14 @@ pub(crate) async fn indexes(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn authentication_errors_explain_tls_without_exposing_driver_details() {
+        let error = super::connection_error(super::sqlx::Error::Configuration(
+            "RSA auth backend disabled; synthetic-secret".into(),
+        ));
+        assert!(error.1.contains("verified TLS"));
+        assert!(!error.1.contains("synthetic-secret"));
+    }
     #[test]
     fn identifiers_are_quoted() {
         assert_eq!(

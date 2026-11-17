@@ -11,6 +11,7 @@ import ShortcutsDialog from './ShortcutsDialog.vue'
 import CellEditor from './CellEditor.vue'
 import ConnectionForm from './ConnectionForm.vue'
 import ConnectionSettingsDialog from './ConnectionSettingsDialog.vue'
+import VaultBackupDialog from './VaultBackupDialog.vue'
 import ContextMenu from './ContextMenu.vue'
 import DatabaseExplorer from './DatabaseExplorer.vue'
 import DatabaseLauncher from './DatabaseLauncher.vue'
@@ -33,6 +34,20 @@ import type {
   TableInfo,
 } from '../../shared/database'
 const db = useDatabase()
+const vaultBackupOpen = ref(false)
+watch(
+  () => db.savedConnections.value.length,
+  (count, previous) => {
+    if (count !== 1 || previous !== 0) return
+    try {
+      if (localStorage.getItem('dbsaur.recovery-prompt.v1')) return
+      localStorage.setItem('dbsaur.recovery-prompt.v1', 'shown')
+      vaultBackupOpen.value = true
+    } catch {
+      /* The backup action remains available without local storage. */
+    }
+  },
+)
 const workspaceTabs = useWorkspaceTabs(db)
 const { tableTabs, activeView, activateQuery, runQuery } = workspaceTabs
 const editor = ref<'delete' | 'createDatabase' | null>(null)
@@ -551,6 +566,13 @@ async function cellSaved() {
       />
       <div class="header-actions">
         <button
+          v-if="db.savingEnabled.value"
+          class="button secondary small"
+          @click="vaultBackupOpen = true"
+        >
+          Vault backup
+        </button>
+        <button
           v-if="session"
           class="button secondary small"
           @click="connectionDialog?.showModal()"
@@ -570,6 +592,11 @@ async function cellSaved() {
       </div>
     </header>
     <ShortcutsDialog v-if="shortcutsOpen" @close="shortcutsOpen = false" />
+    <VaultBackupDialog
+      v-if="vaultBackupOpen"
+      @close="vaultBackupOpen = false"
+      @imported="db.loadSavedConnections()"
+    />
     <AboutDialog v-if="aboutOpen" @close="aboutOpen = false" />
     <div
       class="app-body"
@@ -595,6 +622,13 @@ async function cellSaved() {
             </div>
           </div>
           <div v-if="session" class="database-select-row">
+            <span
+              v-if="session.readOnly"
+              class="read-only-label"
+              title="Reconnect with read-only mode disabled to enable writes"
+            >
+              <AppIcon name="lock" :size="14" /> Read only
+            </span>
             <div class="database-select-controls">
               <DatabaseSelect
                 :databases="session.allDatabases ? databases : [session.database]"

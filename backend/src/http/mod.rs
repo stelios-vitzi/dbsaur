@@ -105,6 +105,11 @@ pub(crate) fn router_with_services(
             post(test_saved_connection).layer(DefaultBodyLimit::max(256 * 1024)),
         )
         .route("/api/connections/{id}/connect", post(connect_saved))
+        .route("/api/vault/export", post(export_vault))
+        .route(
+            "/api/vault/import",
+            post(import_vault).layer(DefaultBodyLimit::max(32 * 1024 * 1024)),
+        )
         .route("/api/rows", get(rows))
         .route("/api/indexes", get(indexes))
         .route("/api/query", post(query))
@@ -193,6 +198,51 @@ fn ensure_writable(input: &ConnectionInput) -> AppResult<()> {
         ));
     }
     Ok(())
+}
+
+async fn export_vault(
+    State(state): State<Shared>,
+    Json(request): Json<VaultTransfer>,
+) -> AppResult<Json<Vec<VaultProfile>>> {
+    if request.confirmation != "EXPORT" {
+        return Err(invalid("Confirm the vault export."));
+    }
+    let _permit = state
+        .operations
+        .try_acquire()
+        .map_err(|_| AppError(ErrorKind::Busy, "Too many requests. Try again shortly."))?;
+    let repository = state
+        .connections
+        .as_ref()
+        .ok_or_else(|| invalid("Saved connections are unavailable."))?;
+    let mut profiles = Vec::new();
+    for saved in repository.list().await? {
+        profiles.push(VaultProfile {
+            name: saved.name,
+            input: repository.load(&saved.id).await?,
+        });
+    }
+    Ok(Json(profiles))
+}
+
+async fn import_vault(
+    State(state): State<Shared>,
+    Json(request): Json<VaultTransfer>,
+) -> AppResult<StatusCode> {
+    if request.confirmation != "IMPORT" {
+        return Err(invalid("Confirm the vault import."));
+    }
+    let _permit = state
+        .operations
+        .try_acquire()
+        .map_err(|_| AppError(ErrorKind::Busy, "Too many requests. Try again shortly."))?;
+    state
+        .connections
+        .as_ref()
+        .ok_or_else(|| invalid("Saved connections are unavailable."))?
+        .import(request.profiles)
+        .await?;
+    Ok(StatusCode::NO_CONTENT)
 }
 
 async fn test_input(state: &AppState, input: &mut ConnectionInput) -> AppResult<()> {

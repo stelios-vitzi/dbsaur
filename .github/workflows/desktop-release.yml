@@ -12,6 +12,9 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  database-integration:
+    uses: ./.github/workflows/database-integration.yml
+
   preflight:
     name: Validate release signing setup
     runs-on: ubuntu-latest
@@ -28,6 +31,16 @@ jobs:
           RELEASE_SIGNED: ${{ github.event_name == 'push' && startsWith(github.ref, 'refs/tags/') }}
           TAURI_UPDATER_PUBLIC_KEY: ${{ vars.TAURI_UPDATER_PUBLIC_KEY }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          OS_CODE_SIGNING: 'true'
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
+          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+          WINDOWS_TIMESTAMP_URL: ${{ vars.WINDOWS_TIMESTAMP_URL }}
         run: node scripts/desktop-release.mjs preflight
 
   build:
@@ -104,10 +117,49 @@ jobs:
       - run: npm run typecheck
       - run: npm run lint
       - run: npm test
+      - name: Import Windows signing certificate
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
+          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $certificatePath = Join-Path $env:RUNNER_TEMP 'dbsaur-signing.pfx'
+          try {
+            [IO.File]::WriteAllBytes($certificatePath, [Convert]::FromBase64String($env:WINDOWS_CERTIFICATE))
+            $password = ConvertTo-SecureString $env:WINDOWS_CERTIFICATE_PASSWORD -AsPlainText -Force
+            $certificate = Import-PfxCertificate -FilePath $certificatePath -CertStoreLocation Cert:\CurrentUser\My -Password $password
+            if (!$certificate.HasPrivateKey) { throw 'Signing certificate has no private key' }
+            "WINDOWS_CERTIFICATE_THUMBPRINT=$($certificate.Thumbprint)" >> $env:GITHUB_ENV
+          } finally {
+            if (Test-Path -LiteralPath $certificatePath) { Remove-Item -LiteralPath $certificatePath -Force }
+          }
+      - name: Import Apple Developer ID certificate
+        if: runner.os == 'macOS'
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+        run: |
+          set -euo pipefail
+          keychain="$RUNNER_TEMP/dbsaur-signing.keychain-db"
+          certificate="$RUNNER_TEMP/dbsaur-signing.p12"
+          password="$(openssl rand -hex 32)"
+          echo "::add-mask::$password"
+          printf '%s' "$APPLE_CERTIFICATE" | base64 --decode > "$certificate"
+          security create-keychain -p "$password" "$keychain"
+          security unlock-keychain -p "$password" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security import "$certificate" -k "$keychain" -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$password" "$keychain" >/dev/null
+          security list-keychains -d user -s "$keychain" "$HOME/Library/Keychains/login.keychain-db"
+          rm -f "$certificate"
       - name: Select installer version
         id: version
         env:
           TAURI_UPDATER_PUBLIC_KEY: ${{ vars.TAURI_UPDATER_PUBLIC_KEY }}
+          APPLE_SIGNING_IDENTITY: ${{ runner.os == 'macOS' && secrets.APPLE_SIGNING_IDENTITY || '' }}
+          WINDOWS_TIMESTAMP_URL: ${{ vars.WINDOWS_TIMESTAMP_URL }}
         run: node scripts/desktop-release.mjs version
       - name: Build native packages
         env:
@@ -115,10 +167,38 @@ jobs:
           NO_STRIP: 'true'
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ runner.os == 'macOS' && secrets.APPLE_SIGNING_IDENTITY || '' }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
           args=(--ci --bundles "$RELEASE_BUNDLES" --config .artifacts/desktop-release.json)
           if [[ -n "$RELEASE_TARGET" ]]; then args+=(--target "$RELEASE_TARGET"); fi
           cargo xtask build "${args[@]}" -- --locked
+      - name: Verify Windows OS signatures
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $files = @(Get-Item 'dist/release/dbsaur-desktop.exe') + @(Get-ChildItem 'dist/release/bundle/nsis/*-setup.exe')
+          if ($files.Count -ne 2) { throw 'Expected one signed executable and one installer' }
+          foreach ($file in $files) {
+            if ((Get-AuthenticodeSignature -LiteralPath $file.FullName).Status -ne 'Valid') { throw 'Authenticode verification failed' }
+          }
+      - name: Verify macOS signing and notarization
+        if: runner.os == 'macOS'
+        run: |
+          set -euo pipefail
+          app="dist/$RELEASE_TARGET/release/bundle/macos/DBsaur.app"
+          codesign --verify --deep --strict "$app"
+          spctl --assess --type execute "$app"
+          xcrun stapler validate "$app"
+      - name: Remove temporary Apple keychain
+        if: always() && runner.os == 'macOS'
+        run: |
+          if [[ -f "$RUNNER_TEMP/dbsaur-signing.keychain-db" ]]; then
+            security delete-keychain "$RUNNER_TEMP/dbsaur-signing.keychain-db"
+          fi
       - run: cargo test --manifest-path src-tauri/Cargo.toml --locked
       - run: cargo clippy --manifest-path src-tauri/Cargo.toml --locked --all-targets -- -D warnings
       - name: Collect release assets and checksums
@@ -174,7 +254,7 @@ jobs:
       - run: cargo audit --file "${{ matrix.lockfile }}"
 
   release:
-    needs: [preflight, build, audit-npm, audit-rust]
+    needs: [preflight, build, audit-npm, audit-rust, database-integration]
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -205,7 +285,7 @@ jobs:
 
   summary:
     name: Release outcome
-    needs: [preflight, build, audit-npm, audit-rust, release]
+    needs: [preflight, build, audit-npm, audit-rust, database-integration, release]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -216,6 +296,7 @@ jobs:
           BUILD_RESULT: ${{ needs.build.result }}
           NPM_RESULT: ${{ needs.audit-npm.result }}
           RUST_RESULT: ${{ needs.audit-rust.result }}
+          INTEGRATION_RESULT: ${{ needs.database-integration.result }}
           RELEASE_RESULT: ${{ needs.release.result }}
         run: |
           {
@@ -224,6 +305,7 @@ jobs:
             echo "Native builds: $BUILD_RESULT"
             echo "npm audit: $NPM_RESULT"
             echo "RustSec audits (all three lockfiles): $RUST_RESULT"
+            echo "Disposable database integration: $INTEGRATION_RESULT"
             echo "Publication: $RELEASE_RESULT"
             if [[ "$RELEASE_RESULT" == success ]]; then
               echo "[Published releases](https://github.com/$GITHUB_REPOSITORY/releases)"

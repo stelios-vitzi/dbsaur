@@ -1,0 +1,91 @@
+name: Disposable database integration
+
+on:
+  pull_request:
+  push:
+    branches: ['**']
+  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  engines:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgis/postgis:16-3.4
+        env:
+          POSTGRES_USER: dbsaur
+          POSTGRES_PASSWORD: disposable_test_only
+          POSTGRES_DB: dbsaur_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -h 127.0.0.1 -U dbsaur -d dbsaur_test"
+          --health-interval 5s --health-timeout 5s --health-retries 30
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: disposable_test_only
+          MYSQL_DATABASE: dbsaur_test
+        ports: ['3306:3306']
+        options: >-
+          --health-cmd "mysqladmin ping -h 127.0.0.1 -pdisposable_test_only"
+          --health-interval 5s --health-timeout 5s --health-retries 30
+      mariadb:
+        image: mariadb:10.11
+        env:
+          MARIADB_ROOT_PASSWORD: disposable_test_only
+          MARIADB_DATABASE: dbsaur_test
+        ports: ['3307:3306']
+        options: >-
+          --health-cmd "healthcheck.sh --connect --innodb_initialized"
+          --health-interval 5s --health-timeout 5s --health-retries 30
+      sqlserver:
+        image: mcr.microsoft.com/mssql/server:2022-latest
+        env:
+          ACCEPT_EULA: 'Y'
+          MSSQL_SA_PASSWORD: Disposable_Test_Only_42!
+        ports: ['1433:1433']
+        options: >-
+          --health-cmd "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P 'Disposable_Test_Only_42!' -C -Q 'SELECT 1' -b"
+          --health-interval 10s --health-timeout 5s --health-retries 30
+      mongodb:
+        image: mongo:8.0
+        ports: ['27017:27017']
+        options: >-
+          --health-cmd "mongosh --quiet --eval 'db.runCommand({ping:1})'"
+          --health-interval 5s --health-timeout 5s --health-retries 30
+    env:
+      WEBDB_TEST_CONNECTION_JSON: '{"provider":"postgres","host":"127.0.0.1","port":5432,"database":"dbsaur_test","username":"dbsaur","password":"disposable_test_only","ssl":false,"readOnly":false}'
+      WEBDB_TEST_MYSQL_CONNECTION_JSON: '{"provider":"mysql","host":"127.0.0.1","port":3306,"database":"dbsaur_test","username":"root","password":"disposable_test_only","ssl":false,"readOnly":false}'
+      WEBDB_TEST_MARIADB_CONNECTION_JSON: '{"provider":"mariadb","host":"127.0.0.1","port":3307,"database":"dbsaur_test","username":"root","password":"disposable_test_only","ssl":false,"readOnly":false}'
+      WEBDB_TEST_SQLSERVER_CONNECTION_JSON: '{"provider":"sqlserver","host":"127.0.0.1","port":1433,"database":"dbsaur_test","username":"sa","password":"Disposable_Test_Only_42!","ssl":false,"readOnly":false}'
+      WEBDB_TEST_MONGODB_CONNECTION_JSON: '{"provider":"mongodb","host":"127.0.0.1","port":27017,"database":"dbsaur_test","username":"","password":"","ssl":false,"readOnly":false}'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up Rust
+        run: rustup toolchain install 1.99.1 --profile minimal && rustup default 1.99.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          key: disposable-databases
+          workspaces: backend -> target
+      - name: Initialize disposable SQL Server database
+        env:
+          SQLSERVER_CONTAINER: ${{ job.services.sqlserver.id }}
+        run: docker exec "$SQLSERVER_CONTAINER" /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P 'Disposable_Test_Only_42!' -C -b -Q 'CREATE DATABASE dbsaur_test'
+      - name: Configure verified TLS for MySQL authentication
+        env:
+          MYSQL_TEST_CONTAINER: ${{ job.services.mysql.id }}
+        run: node scripts/prepare-mysql-test-tls.mjs
+      - name: Run SQLite and unit tests
+        run: cargo test --manifest-path backend/Cargo.toml --locked
+      - name: Run all opt-in engine tests against disposable services
+        run: cargo test --manifest-path backend/Cargo.toml --locked -- --ignored --test-threads=1

@@ -5,6 +5,7 @@ import HelpTooltip from './HelpTooltip.vue'
 
 import { providerOptions } from '../providers'
 import { parseConnectionUrl } from '../utils/connectionUrl'
+import { connectionSafety } from '../utils/connectionSafety'
 import type {
   ConnectionInput,
   Provider,
@@ -87,6 +88,11 @@ const form = reactive<ConnectionInput>({
 const isSqlite = computed(() => form.provider === 'sqlite')
 const isMongo = computed(() => form.provider === 'mongodb')
 const options = computed(() => providerOptions(form.provider))
+watch(
+  () => [form.host, form.provider],
+  () => Object.assign(form, connectionSafety(form.host, form.provider)),
+  { flush: 'sync' },
+)
 watch(
   () => form.provider,
   () => {

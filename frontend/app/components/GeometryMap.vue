@@ -7,6 +7,7 @@ import type { Map as MapLibreMap, StyleSpecification } from 'maplibre-gl'
 import type { Geometry } from 'geojson'
 import mapWorkerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?url'
 import { geometryBounds, geometryMapStyle, type GeometryBounds } from '../utils/geometryMap'
+import { loadMapPreferences } from '../utils/mapPreferences'
 
 const props = defineProps<{ value: string; column: string }>()
 const emit = defineEmits<{ close: [] }>()
@@ -16,7 +17,8 @@ const loading = ref(true)
 const error = ref('')
 const notice = ref('')
 const srid = ref<number>()
-const background = ref(true)
+const preferences = loadMapPreferences()
+const background = ref(preferences.enabled && !!preferences.url)
 const tileError = ref(false)
 let map: MapLibreMap | undefined
 let geometry: Geometry | undefined
@@ -32,17 +34,30 @@ function fit() {
 async function updateBackground() {
   if (!map || !geometry) return
   const version = ++backgroundVersion
-  tileError.value = false
   if (!background.value) {
     map.setStyle(geometryMapStyle(geometry), { diff: false })
     return
   }
+  tileError.value = false
   try {
-    // Bundle the canonical VijiTiles style, like the existing app integrations.
-    // Its vector tiles and glyphs are served directly from vijimaps.com.
-    basemap ??= await $fetch<StyleSpecification>('/maps/vijitiles.json', {
-      signal: controller.signal,
-    })
+    if (!preferences.enabled || !preferences.url) return
+    basemap ??= preferences.url.includes('{z}')
+      ? {
+          version: 8,
+          sources: {
+            basemap: {
+              type: 'raster',
+              tiles: [preferences.url],
+              tileSize: 256,
+              attribution: preferences.attribution
+                .replaceAll('&', '&amp;')
+                .replaceAll('<', '&lt;')
+                .replaceAll('>', '&gt;'),
+            },
+          },
+          layers: [{ id: 'basemap', type: 'raster', source: 'basemap' }],
+        }
+      : await $fetch<StyleSpecification>(preferences.url, { signal: controller.signal })
     if (!disposed && version === backgroundVersion && background.value)
       map.setStyle(geometryMapStyle(geometry, basemap), { diff: false })
   } catch {
@@ -87,16 +102,12 @@ onMounted(async () => {
       attributionControl: false,
     })
     map.addControl(new M.NavigationControl({ showCompass: false }), 'top-left')
-    map.addControl(
-      new M.AttributionControl({
-        compact: true,
-        customAttribution:
-          '<a href="https://vijimaps.com" target="_blank" rel="noopener noreferrer">VijiTiles</a>',
-      }),
-      'bottom-right',
-    )
+    map.addControl(new M.AttributionControl({ compact: true }), 'bottom-right')
     map.on('error', () => {
-      if (background.value) tileError.value = true
+      if (background.value) {
+        tileError.value = true
+        background.value = false
+      }
     })
     map.on('webglcontextlost', () => {
       error.value = 'The map renderer stopped. Close and reopen the preview to try again.'
@@ -151,12 +162,12 @@ onScopeDispose(() => {
         ><input
           v-model="background"
           type="checkbox"
-          :disabled="loading || !!error || !!notice"
-        />VijiTiles background</label
+          :disabled="loading || !!error || !!notice || !preferences.enabled || !preferences.url"
+        />Map background</label
       >
     </div>
     <p class="geometry-caption muted">
-      2D preview in WGS 84. Background tiles are served by vijimaps.com.
+      2D preview in WGS 84. Configure optional map backgrounds in Privacy settings.
     </p>
     <div class="geometry-stage" :aria-busy="loading">
       <div ref="container" class="geometry-map" aria-label="Interactive geometry map" />
@@ -169,7 +180,7 @@ onScopeDispose(() => {
       </p>
     </div>
     <p v-if="tileError" class="geometry-caption" role="status">
-      VijiTiles background could not load. The geometry is still available.
+      Map background could not load. The geometry is still available offline.
     </p>
   </dialog>
 </template>

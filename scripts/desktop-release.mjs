@@ -120,6 +120,20 @@ export function validateSigningConfiguration(env) {
   const missing = ['TAURI_UPDATER_PUBLIC_KEY', 'TAURI_SIGNING_PRIVATE_KEY'].filter(
     (name) => !env[name]?.trim(),
   )
+  if (env.OS_CODE_SIGNING === 'true')
+    missing.push(
+      ...[
+        'APPLE_CERTIFICATE',
+        'APPLE_CERTIFICATE_PASSWORD',
+        'APPLE_SIGNING_IDENTITY',
+        'APPLE_ID',
+        'APPLE_PASSWORD',
+        'APPLE_TEAM_ID',
+        'WINDOWS_CERTIFICATE',
+        'WINDOWS_CERTIFICATE_PASSWORD',
+        'WINDOWS_TIMESTAMP_URL',
+      ].filter((name) => !env[name]?.trim()),
+    )
   if (missing.length)
     throw new Error(
       `Missing GitHub Actions signing configuration: ${missing.join(', ')}. ` +
@@ -210,7 +224,21 @@ if (process.argv[1] && resolve(process.argv[1]) === resolve(import.meta.filename
       version,
       ...(signing
         ? {
-            bundle: { createUpdaterArtifacts: true },
+            bundle: {
+              createUpdaterArtifacts: true,
+              ...(process.env.APPLE_SIGNING_IDENTITY
+                ? { macOS: { signingIdentity: process.env.APPLE_SIGNING_IDENTITY } }
+                : {}),
+              ...(process.env.WINDOWS_CERTIFICATE_THUMBPRINT
+                ? {
+                    windows: {
+                      certificateThumbprint: process.env.WINDOWS_CERTIFICATE_THUMBPRINT,
+                      digestAlgorithm: 'sha256',
+                      timestampUrl: process.env.WINDOWS_TIMESTAMP_URL,
+                    },
+                  }
+                : {}),
+            },
             plugins: { updater: { ...config.plugins.updater, pubkey } },
           }
         : {}),

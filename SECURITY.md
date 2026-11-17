@@ -22,13 +22,14 @@ key in the application. Keep the key stable and backed up; see
 check for updates. GitHub receives the client's IP address during update checks
 and downloads; database contents and credentials are not included.
 
-Tauri updater signatures are separate from OS code signing. Windows executables
-and installers currently have no Authenticode signature and can trigger
-SmartScreen warnings. macOS packages use ad-hoc signing without Developer ID
-notarization and can trigger Gatekeeper warnings. See
+Tauri updater signatures are separate from OS code signing. Release workflows
+now require Authenticode and Developer ID signing/notarization configuration,
+and verify OS signatures before collecting assets. Hosted validation with real
+maintainer identities is still required. Local builds remain unsigned/ad-hoc;
+SmartScreen reputation warnings may persist for signed Windows packages. See
 [operating-system trust](docs/desktop-updates.md#operating-system-trust).
 
-Online audits were rerun on 12 November 2026 after the MongoDB and saved connection updates: npm reports zero
+Online audits were rerun on 17 November 2026 after the robustness changes: npm reports zero
 findings. All three Cargo lockfiles have no vulnerability findings; the desktop
 glib and proc-macro-error warnings remain visible. Native build and signed update
 verification are separate gates.
@@ -44,7 +45,9 @@ Tauri application. There is no standalone server or multi-user deployment mode.
   desktop session token. Keep it private; remote/shared hosting is unsupported.
 - The application intentionally connects to user-selected database hosts.
   All locally saved connections belong to the same OS user installation.
-- TLS is disabled by default. Enable verified TLS on untrusted networks.
+- New remote form/URL connections default to verified TLS and a read-only lock.
+  Only explicit loopback hosts receive plaintext development defaults. Saved TLS
+  choices are preserved; missing saved read-only flags default locked.
 - SQLite opens an existing, user-selected local file. Browsing uses read-only
   handles and query-only mode; explicit writes use transactions with foreign keys
   enabled. URI parameters, attached databases, extension loading, and arbitrary
@@ -89,7 +92,7 @@ audits block high/critical findings. RustSec audits cover backend, desktop, and
 xtask lockfiles and block every vulnerability, including unscored ones. Audit
 errors also block publication. No advisory exceptions are configured.
 
-Current live audit results after adding SQLite support (12 November 2026):
+Current live audit results (17 November 2026, after the robustness changes):
 
 | Check | Result |
 | --- | --- |

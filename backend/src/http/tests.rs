@@ -5,6 +5,54 @@ use http_body_util::BodyExt;
 use tower::ServiceExt;
 
 #[tokio::test]
+async fn vault_transfers_require_confirmation_and_preserve_existing_profiles() {
+    let vault = Arc::new(
+        adapters::vault::SqliteVault::open(":memory:", &[4; 32])
+            .await
+            .unwrap(),
+    );
+    let app = router_with_services(false, Some(vault.clone()), DatabaseService::new(vec![]));
+    let profile = serde_json::json!({"name":"Restored", "input":{"provider":"postgres","host":"localhost","port":5432,"database":"demo","username":"test","password":"synthetic-backup-secret","ssl":false,"readOnly":true}});
+    for path in ["/api/vault/export", "/api/vault/import"] {
+        assert_eq!(
+            call(
+                &app,
+                "POST",
+                path,
+                "",
+                serde_json::json!({"confirmation":"","profiles":[profile.clone()]})
+            )
+            .await
+            .0,
+            StatusCode::BAD_REQUEST
+        );
+    }
+    assert!(vault.list().await.unwrap().is_empty());
+    assert_eq!(
+        call(
+            &app,
+            "POST",
+            "/api/vault/import",
+            "",
+            serde_json::json!({"confirmation":"IMPORT","profiles":[profile]})
+        )
+        .await
+        .0,
+        StatusCode::NO_CONTENT
+    );
+    let (_, _, exported) = call(
+        &app,
+        "POST",
+        "/api/vault/export",
+        "",
+        serde_json::json!({"confirmation":"EXPORT"}),
+    )
+    .await;
+    assert_eq!(exported[0]["input"]["password"], "synthetic-backup-secret");
+    assert_eq!(exported[0]["input"]["readOnly"], true);
+}
+
+#[tokio::test]
 async fn saved_connection_settings_redact_secrets_and_preserve_the_active_session() {
     let vault = Arc::new(
         adapters::vault::SqliteVault::open(":memory:", &[6; 32])
@@ -13,7 +61,7 @@ async fn saved_connection_settings_redact_secrets_and_preserve_the_active_sessio
     );
     let original: ConnectionInput = serde_json::from_value(serde_json::json!({
         "provider":"postgres", "host":"old-host", "port":5432, "database":"app", "username":"alice",
-        "password":"saved-secret", "ssl":true,
+        "password":"saved-secret", "ssl":true, "readOnly":false,
         "tlsCert":"-----BEGIN CERTIFICATE-----test-----END CERTIFICATE-----",
         "tlsKey":"-----BEGIN PRIVATE KEY-----private-test-----END PRIVATE KEY-----"
     }))
@@ -446,7 +494,7 @@ async fn instance_switching_and_saved_connections_never_expose_credentials() {
         Some(vault),
         DatabaseService::new(vec![Arc::new(InstanceAdapter)]),
     );
-    let input = serde_json::json!({"provider":"postgres","host":"localhost","port":5432,"database":"","allDatabases":true,"username":"user","password":"private-password","ssl":true});
+    let input = serde_json::json!({"provider":"postgres","host":"localhost","port":5432,"database":"","allDatabases":true,"username":"user","password":"private-password","ssl":true,"readOnly":false});
     let mut single = input.clone();
     single["allDatabases"] = false.into();
     assert_eq!(

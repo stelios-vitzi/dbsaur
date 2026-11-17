@@ -6,6 +6,7 @@ export interface ToastMessage {
   message: string
   tone: ToastTone
   confirmation?: boolean
+  details?: string
 }
 
 export function createToastState() {
@@ -41,13 +42,16 @@ export function useToast() {
   function dismiss(id: number) {
     respond(id, false)
   }
-  async function confirm(message: string) {
+  async function confirm(message: string, details?: string) {
     const id = ++sequence.value
     owned.add(id)
     try {
       return await new Promise<boolean>((resolve) => {
         resolvers.set(id, resolve)
-        messages.value = [...messages.value, { id, message, tone: 'info', confirmation: true }]
+        messages.value = [
+          ...messages.value,
+          { id, message, details, tone: 'info', confirmation: true },
+        ]
       })
     } finally {
       owned.delete(id)

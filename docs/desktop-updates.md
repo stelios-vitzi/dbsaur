@@ -34,8 +34,28 @@ alternative formats with `cargo xtask build --bundles <format>`.
 ### Operating-system trust
 
 Updater signatures verify updates inside DBsaur; they do not establish a verified
-Windows publisher or satisfy macOS Gatekeeper. Windows releases currently have
-no Authenticode certificate, and macOS builds use ad-hoc signing.
+Windows publisher or satisfy macOS Gatekeeper. Release preflight now requires
+OS signing setup; local builds keep their existing unsigned/ad-hoc behavior.
+
+Configure these Actions secrets before releasing:
+
+- `APPLE_CERTIFICATE`: base64-encoded Developer ID Application `.p12`.
+- `APPLE_CERTIFICATE_PASSWORD`: its export password.
+- `APPLE_SIGNING_IDENTITY`: the full Developer ID Application identity.
+- `APPLE_ID`, `APPLE_PASSWORD` (an app-specific password), and `APPLE_TEAM_ID`
+  for notarization.
+- `WINDOWS_CERTIFICATE`: base64-encoded signing `.pfx`, with its private key.
+- `WINDOWS_CERTIFICATE_PASSWORD`: its export password.
+
+Set repository variable `WINDOWS_TIMESTAMP_URL` to the timestamp endpoint
+provided by your certificate authority. Tauri signs the application and NSIS
+installer during bundling, before updater signatures and checksums are generated.
+The workflow verifies both Windows signatures, and runs codesign, Gatekeeper,
+and stapler validation for the macOS app. Credentials must support unattended
+signing; a hardware-backed or hosted signing service may require a different
+Windows signing command. These paths need hosted validation with real identities.
+See Tauri's [macOS signing](https://v2.tauri.app/distribute/sign/macos/) and
+[Windows signing](https://v2.tauri.app/distribute/sign/windows/) instructions.
 
 For direct Windows downloads, sign the application and installer with a trusted
 code-signing identity and timestamp the signatures. SmartScreen can still warn

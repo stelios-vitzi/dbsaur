@@ -1,4 +1,5 @@
 import type { ConnectionInput } from '../../shared/database'
+import { connectionSafety } from './connectionSafety.ts'
 
 const protocols: Record<string, { provider: string; port: number }> = {
   'postgres:': { provider: 'postgres', port: 5432 },
@@ -42,7 +43,7 @@ export function parseConnectionUrl(value: string): ConnectionInput {
       [host, database, username, password].some((part) => /[\u0000-\u001f\u007f]/u.test(part))
     )
       throw invalid()
-    let ssl = false
+    let ssl = connectionSafety(host).ssl
     let authSource: string | undefined
     let tlsSpecified = false
     for (const [key, setting] of url.searchParams) {
@@ -78,6 +79,7 @@ export function parseConnectionUrl(value: string): ConnectionInput {
       username,
       password,
       ssl,
+      readOnly: connectionSafety(host).readOnly,
       allDatabases: !database,
       ...(type.provider === 'mongodb' ? { authSource: authSource ?? (database || 'admin') } : {}),
     }

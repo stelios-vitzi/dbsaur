@@ -5,6 +5,7 @@ import { compileScript, parse } from '@vue/compiler-sfc'
 import ts from 'typescript'
 import * as vue from 'vue'
 import { providerOptions } from '../app/providers/index.ts'
+import { connectionSafety } from '../app/utils/connectionSafety.ts'
 import { parseConnectionUrl } from '../app/utils/connectionUrl.ts'
 
 function setup(t, component, initial) {
@@ -26,6 +27,7 @@ function setup(t, component, initial) {
           useTemplateRef: () => vue.ref({ reportValidity: () => true }),
         }
       if (name.endsWith('/providers')) return { providerOptions }
+      if (name.endsWith('/connectionSafety')) return { connectionSafety }
       if (name.endsWith('/connectionUrl')) return { parseConnectionUrl }
       return {}
     },
@@ -175,4 +177,25 @@ test('connection editor refuses settings returned for a different connection', a
   await view.load()
   assert.equal(view.selected.value, null)
   assert.match(view.error.value, /Reopen its settings/)
+})
+
+test('host edits apply safe defaults while saved explicit choices survive hydration', (t) => {
+  const { view } = setup(t, 'ConnectionForm', { busy: false, savingEnabled: true })
+  view.form.host = 'db.example'
+  assert.equal(view.form.ssl, true)
+  assert.equal(view.form.readOnly, true)
+  view.form.ssl = false
+  view.form.readOnly = false
+  view.form.username = 'different-user'
+  assert.equal(view.form.ssl, false)
+  assert.equal(view.form.readOnly, false)
+  view.form.host = '::1'
+  assert.equal(view.form.ssl, false)
+  const saved = details()
+  saved.input.host = 'remote.example'
+  saved.input.readOnly = false
+  saved.input.ssl = false
+  const hydrated = setup(t, 'ConnectionForm', { initial: saved, busy: false, savingEnabled: true }).view
+  assert.equal(hydrated.form.ssl, false)
+  assert.equal(hydrated.form.readOnly, false)
 })

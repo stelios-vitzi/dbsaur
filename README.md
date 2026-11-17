@@ -11,7 +11,7 @@ geometry from a single local application.
 [Security](SECURITY.md) · [License](LICENSE)
 
 DBsaur is in early development. Database changes commit after choosing Save in
-the pending-change notification and can be irreversible; use appropriate database
+the change-review dialog and can be irreversible; use appropriate database
 permissions and keep backups. Publication requires all desktop builds and dependency
 audits to pass; see the [security policy](SECURITY.md#release-security-gate--11-november-2026).
 
@@ -33,9 +33,20 @@ audits to pass; see the [security policy](SECURITY.md#release-security-gate--11-
 | SQL Server 2016+ | Supported           | Supported                 | Not supported     |
 | SQLite           | Supported           | Supported with limits     | Not supported     |
 
-Provider behavior differs: SQL Server queries currently exclude CTEs, MySQL and
+Provider behavior differs: MySQL and
 MariaDB DDL can commit implicitly, and some generated fields remain read only.
 See the [user guide](docs/user-guide.md) for dialect, editing, and connection limits.
+
+<details>
+<summary>Query workspace, PostGIS map, and MongoDB browser screenshots</summary>
+
+Rendered from synthetic fixtures; no private database records are shown.
+
+![Query workspace](docs/images/query-workspace.png)
+![PostGIS geometry preview with offline background](docs/images/postgis-map.png)
+![MongoDB document browser](docs/images/mongodb-browser.png)
+
+</details>
 
 ## Install
 
@@ -55,10 +66,11 @@ Each release starts with five direct download links. Other assets are for
 automatic updates, checksums, and license notices; no ZIP extraction is needed.
 
 Linux release builds use Ubuntu 22.04 as their compatibility baseline and require
-WebKitGTK 4.1. macOS builds target macOS 11 or newer and use an ad-hoc signature;
-Developer ID signing and notarization are required for distribution without
-Gatekeeper warnings. Windows packages have no Authenticode certificate. Updater
-artifacts carry separate signatures for in-app verification.
+WebKitGTK 4.1. macOS builds target macOS 11 or newer. Release workflows require
+OS signing and notarization credentials; local builds remain unsigned/ad-hoc.
+Updater artifacts carry separate signatures for in-app verification. See
+[signing setup](docs/desktop-updates.md#operating-system-trust) and the
+[roadmap review](docs/robustness-review.md) for verification and remaining gaps.
 
 ## Build and run from source
 
@@ -190,17 +202,16 @@ and the plain Vue migration scope.
 ## Security and data handling
 
 DBsaur is a trusted, single-user tool. Database permissions remain the security
-boundary; use a SELECT-only account for browsing. TLS is disabled by default, so
-enable verified TLS before sending credentials over an untrusted network.
+boundary; use a SELECT-only account for browsing. New remote connections default
+to verified TLS and read-only mode; explicit loopback hosts use development defaults.
 The embedded API is bound to loopback and protected by a desktop session token.
 Remote or shared deployment is not supported.
 
 Credentials remain in session memory unless saved to the encrypted vault. Protect
-the vault and its key; losing the key makes stored credentials unrecoverable.
+the vault and its key; export a passphrase-encrypted backup for recovery.
 Saved SQL uses local interface storage and should not contain secrets. Optional
-PostGIS basemaps fetch tiles and fonts from `vijimaps.com`, exposing the client IP
-address and viewed map area to that service; database records and geometry values
-are not sent to the tile service.
+PostGIS backgrounds are disabled by default. Opt-in custom tile servers receive
+the client IP and viewed area; database records and geometry values are not sent.
 
 ## License
 

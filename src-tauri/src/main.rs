@@ -2,6 +2,7 @@
 
 mod server;
 mod updater;
+mod vault;
 
 use std::{fs, io::Write, sync::Arc};
 use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
@@ -16,11 +17,13 @@ fn main() {
             listener.set_nonblocking(true)?;
             let data = app.path().app_local_data_dir()?;
             fs::create_dir_all(&data)?;
-            let key_path = data.join("vault.key");
+            // Preserve an unreadable original vault. A separate recovery store
+            // lets the app start and import a passphrase-protected backup.
+            let (key_path, vault_path) = vault::paths(&data);
             let key = match fs::read(&key_path) {
                 Ok(key) => key,
                 Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-                    if data.join("connections.sqlite").exists() {
+                    if vault_path.exists() {
                         return Err(
                             "Desktop vault key is missing; restore vault.key from backup".into(),
                         );
@@ -44,9 +47,7 @@ fn main() {
             let key: [u8; 32] = key.try_into().map_err(|_| "Invalid desktop vault key")?;
             let repository =
                 tauri::async_runtime::block_on(dbsaur::adapters::vault::SqliteVault::open(
-                    data.join("connections.sqlite")
-                        .to_str()
-                        .ok_or("Invalid data path")?,
+                    vault_path.to_str().ok_or("Invalid data path")?,
                     &key,
                 ))
                 .map_err(|_| "Unable to open the desktop connection store")?;

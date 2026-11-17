@@ -21,6 +21,7 @@ backend/target-validation/
 *.p12
 *.pfx
 *.dump
+*.dbsaur-vault
 *.bak
 .DS_Store
 Thumbs.db

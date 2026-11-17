@@ -388,7 +388,8 @@ export function useDatabase() {
           : currentSession?.database
     if (
       !(await toast.confirm(
-        `Unsaved database change${target ? ` to ${target}` : ''}. Save to apply it, or cancel to discard it.`,
+        `Unsaved database change${target ? ` to ${target}` : ''}. Save to apply it, or cancel to discard it. ${['mysql', 'mariadb'].includes(currentSession?.provider || '') ? 'MySQL/MariaDB schema changes may commit implicitly and cannot be rolled back. ' : ''}Triggers, cascades, and external side effects may be irreversible.`,
+        JSON.stringify(pending, null, 2),
       ))
     )
       throw new DatabaseChangeCancelled()
@@ -428,6 +429,7 @@ export function useDatabase() {
   })
   onScopeDispose(() => controller?.abort())
   return {
+    loadSavedConnections,
     applyMutation,
     providers,
     databases,

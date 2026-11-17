@@ -67,6 +67,24 @@ test('release preflight requires both signing keys without exposing their conten
   }
 })
 
+test('OS signing preflight blocks incomplete credentials without printing secrets', () => {
+  assert.throws(
+    () =>
+      validateSigningConfiguration({
+        RELEASE_SIGNED: 'true',
+        OS_CODE_SIGNING: 'true',
+        TAURI_UPDATER_PUBLIC_KEY: 'public',
+        TAURI_SIGNING_PRIVATE_KEY: 'private-do-not-print',
+      }),
+    (error) => {
+      assert.ok(error.message.includes('APPLE_SIGNING_IDENTITY'))
+      assert.ok(error.message.includes('WINDOWS_CERTIFICATE'))
+      assert.ok(!error.message.includes('private-do-not-print'))
+      return true
+    },
+  )
+})
+
 test('version numbers remain valid for Windows and consistent across platforms', () => {
   assert.equal(releaseVersion('0.1.0', '42'), '0.1.42')
   for (const value of ['', '0', '65536', 'NaN', '-1'])

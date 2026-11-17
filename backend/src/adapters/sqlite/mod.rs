@@ -1,6 +1,8 @@
 use crate::{application::*, domain::*};
 use async_trait::async_trait;
-use rusqlite::{Connection, OpenFlags, params, params_from_iter, types::ValueRef};
+use rusqlite::{
+    Connection, OpenFlags, OptionalExtension, params, params_from_iter, types::ValueRef,
+};
 use serde_json::{Map, Value};
 use sqlparser::dialect::SQLiteDialect;
 use std::time::{Duration, Instant};
@@ -541,6 +543,7 @@ impl DatabaseAdapter for SqliteAdapter {
     async fn query(&self, input: &ConnectionInput, query: &SqlQuery) -> AppResult<TablePage> {
         let (number, size) = query.bounds().map_err(invalid)?;
         let sql = super::read_query::select(query.statement(), &SQLiteDialect {})?;
+        let read_only = input.read_only;
         run(input, false, move |c| {
             // SQLite auto-renames duplicate names in subqueries; validate the
             // original projection before adding bounded pagination.
@@ -552,17 +555,33 @@ impl DatabaseAdapter for SqliteAdapter {
             {
                 return Err(invalid("Use unique column aliases."));
             }
-            page(
+            drop(statement);
+            let mut edit_plan = None;
+            if !read_only && let Some(candidate) = super::query_editing::candidate(&sql, &SQLiteDialect {}, false) {
+                let table = candidate.name.last().cloned().unwrap_or_default();
+                let schema = if candidate.name.len() == 2 { candidate.name[0].clone() } else { "main".into() };
+                if schema.eq_ignore_ascii_case("main") {
+                    let table: Option<String> = c.query_row("SELECT name FROM main.sqlite_schema WHERE name = ?1 COLLATE NOCASE AND type = 'table'", [&table], |row| row.get(0)).optional()?;
+                    if let Some(table) = table {
+                        let metadata = columns(c, &table)?;
+                        edit_plan = super::query_editing::prepare(candidate, "main".into(), table, metadata, &SQLiteDialect {}, "sqlite");
+                    }
+                }
+            }
+            let source = edit_plan.as_ref().map_or(sql.as_str(), |plan| plan.sql.as_str());
+            let mut result = page(
                 c,
                 &format!(
-                    "SELECT * FROM ({sql}) AS \"dbsaur_query\" LIMIT {} OFFSET {}",
+                    "SELECT * FROM ({source}) AS \"dbsaur_query\" LIMIT {} OFFSET {}",
                     size + 1,
                     u64::from(number) * u64::from(size)
                 ),
                 number,
                 size,
                 None,
-            )
+            )?;
+            if let Some(plan) = edit_plan { super::query_editing::finish(&mut result, plan)?; }
+            Ok(result)
         })
         .await
     }

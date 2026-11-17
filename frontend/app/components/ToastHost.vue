@@ -2,6 +2,7 @@
 import { shallowRef, watch, onMounted, onBeforeUnmount, nextTick, useTemplateRef } from 'vue'
 import { useToast } from '../composables/useToast'
 import AppIcon from './AppIcon.vue'
+import ChangeReviewDialog from './ChangeReviewDialog.vue'
 
 const { messages, dismiss, respond } = useToast()
 const target = shallowRef<HTMLElement | string>('body')
@@ -66,11 +67,18 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
+  <ChangeReviewDialog
+    v-for="item in messages.filter((message) => message.confirmation && message.details)"
+    :key="item.id"
+    :message="item.message"
+    :details="item.details!"
+    @respond="respond(item.id, $event)"
+  />
   <Teleport :to="target">
     <div ref="region" class="toast-region" popover="manual" aria-label="Notifications">
       <TransitionGroup name="toast" tag="div" class="toast-stack">
         <div
-          v-for="item in messages"
+          v-for="item in messages.filter((message) => !message.details)"
           :key="item.id"
           class="toast-message"
           :class="`toast-${item.tone}`"

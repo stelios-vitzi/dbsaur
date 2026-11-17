@@ -106,6 +106,7 @@ test('Save sends the staged snapshot once; no write happens before confirmation'
   const result = db.applyMutation(mutation)
   assert.equal(writes.length, 0)
   assert.equal(host.messages.value[0].confirmation, true)
+  assert.deepEqual(JSON.parse(host.messages.value[0].details), update())
   mutation.values.name = 'changed later'
   const id = host.messages.value[0].id
   host.respond(id, true)

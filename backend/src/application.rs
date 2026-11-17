@@ -79,6 +79,9 @@ pub trait DatabaseAdapter: Send + Sync {
 #[async_trait]
 /// Installation-wide storage: encrypt credentials at rest and list only labels.
 pub trait ConnectionRepository: Send + Sync {
+    async fn import(&self, _profiles: Vec<VaultProfile>) -> AppResult<()> {
+        Err(invalid("Vault import is unavailable."))
+    }
     async fn list(&self) -> AppResult<Vec<SavedConnection>>;
     async fn save(&self, name: &str, input: &ConnectionInput) -> AppResult<String>;
     async fn update(&self, id: &str, name: &str, input: &ConnectionInput) -> AppResult<()>;

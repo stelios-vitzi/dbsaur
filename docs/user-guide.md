@@ -11,8 +11,9 @@ artifacts, and the security gate, start with the [README](../README.md).
 The desktop application creates its encrypted connection store automatically in
 the per-user application data directory for `com.dbsaur.desktop`. It keeps
 `connections.sqlite` and a generated `vault.key` there. Restrict access to this
-directory and back up both files securely; losing the key makes stored credentials
-unrecoverable. No vault environment variables or separate service are required.
+directory and back up both files securely. Without a matching key or a previously
+exported encrypted backup, saved credentials cannot be recovered. No vault
+environment variables or separate service are required.
 Saved SQL and interface preferences use the embedded webview's local storage.
 
 Open the gear on a saved connection, or on its active connection card in the
@@ -39,11 +40,13 @@ MongoDB supports document browsing, editing, and aggregation queries; see [Mongo
 | MariaDB 10.6+    | 3306         | Yes                         | Yes, without a default database | Records and schema; no settings |
 | SQL Server 2016+ | 1433         | Yes                         | Yes, through master             | Records and schema; no settings |
 
-Select a provider in the connection form; the port, query dialect, completion quoting, and generated SELECT adapt automatically. MySQL schemas correspond to databases. SQL Server uses SQL authentication over TCP; enter a reachable TCP port rather than an instance-name suffix. New connections default to TLS disabled. Enable **Verify TLS connection** using the checkbox to the left of TLS settings to encrypt traffic and verify the server certificate and hostname. Saved connections and database switching work with each provider.
+Select a provider in the connection form; the port, query dialect, completion quoting, and generated SELECT adapt automatically. MySQL schemas correspond to databases. SQL Server uses SQL authentication over TCP; enter a reachable TCP port rather than an instance-name suffix. New remote connections default to verified TLS and read-only mode. Only localhost, 127.0.0.1, and ::1 default to plaintext and writable development connections. Enable **Verify TLS connection** using the checkbox to the left of TLS settings to encrypt traffic and verify the server certificate and hostname. Saved connections and database switching work with each provider.
+
+MySQL accounts using full caching_sha2_password authentication may require verified TLS even on loopback. Configure a trusted CA in TLS settings; the client does not enable an RSA authentication fallback or bypass certificate verification. The disposable CI fixture exercises this verified TLS path.
 
 New providers return non-NULL cell values as exact text, including numbers, dates, JSON and booleans; binary values use hexadecimal text. NULL remains JSON null. Table sorting uses native database values. The new providers expose column types, nullability, defaults, and primary keys, with generated and identity fields marked read only. PostgreSQL settings remain exclusive to PostgreSQL.
 
-MySQL and MariaDB browsing runs with session-level read-only transactions and query/lock timeouts. Their query editor accepts one parsed SELECT, including CTEs and joins, and rejects writes, SELECT INTO, locking SELECTs, executable comments, and pass-through table functions. The adapter executes the parsed SQL with backslash escapes disabled. SQL Server has no equivalent read-only transaction mode: its editor validates a single SELECT, rejects those same unsafe constructs, and validates a derived SELECT with the server before execution. For a browse-only permission boundary, use a SELECT-only account. Explicit editing needs corresponding write privileges. SQL Server queries must return named columns and be valid inside a derived table; CTEs and a bare inner ORDER BY are currently unsupported. Use TOP or OFFSET with an inner ORDER BY. Paging without a unique ordering can shift between requests.
+MySQL and MariaDB browsing runs with session-level read-only transactions and query/lock timeouts. Their query editor accepts one parsed SELECT, including CTEs and joins, and rejects writes, SELECT INTO, locking SELECTs, executable comments, and pass-through table functions. The adapter executes the parsed SQL with backslash escapes disabled. SQL Server has no equivalent read-only transaction mode: its editor validates a single SELECT, rejects those same unsafe constructs, and validates a derived SELECT with the server before execution. For a browse-only permission boundary, use a SELECT-only account. Explicit editing needs corresponding write privileges. SQL Server queries must return named columns and be valid inside a derived table; CTEs are supported; a bare inner ORDER BY is unsupported. Use TOP or OFFSET with an inner ORDER BY. Paging without a unique ordering can shift between requests.
 
 Provider tests are opt-in and require explicit connection JSON naming a disposable database. The variables are WEBDB_TEST_MYSQL_CONNECTION_JSON, WEBDB_TEST_MARIADB_CONNECTION_JSON and WEBDB_TEST_SQLSERVER_CONNECTION_JSON, with the same ConnectionInput shape as PostgreSQL and the corresponding provider ID (mysql, mariadb, sqlserver). Run a single provider, for example:
 
@@ -81,7 +84,7 @@ PostgreSQL databases with PostGIS already installed expose a folded-map icon on 
 
 The map supports points, lines, polygons, multipart geometries, and collections. Curves are linearized for display. Known SRIDs are transformed to WGS 84 for a 2D preview; extra coordinate dimensions are not visualized. Empty geometries and SRID 0 show an explanation rather than an assumed location. Invalid geometries, unavailable coordinate transformations, and unsupported surface types may fail to preview without affecting table browsing. Individual preview inputs are limited to 1 MiB.
 
-Maps use MapLibre and the bundled VijiTiles Soft Earth style in `frontend/public/maps/vijitiles.json`. Vector tiles and fonts load directly from `https://vijimaps.com`; the viewer does not depend on the live style API. Opening a map loads its VijiTiles background; turn off **VijiTiles background** for a plain geometry view. Background requests share your IP address and viewed area with vijimaps.com. Geometry values and record attributes are never sent to the tile service. No extension is installed or database data changed by opening a map. The renderer requires WebGL.
+Maps use MapLibre with an offline coordinate grid by default. In **Privacy settings ? Map backgrounds**, enter an XYZ URL containing {z}, {x}, and {y}, or an absolute vector style JSON URL, enable tile requests, and save. Reopen previews to apply preferences. Style resources must use absolute URLs. Enter any required raster attribution. The bundled VijiTiles style is optional and can be served by a tile server you control. Tile/style servers receive your IP address and viewed area only when enabled; geometry values and attributes are not sent to them. Background errors leave geometry available offline. Opening a map installs no extension and changes no database data. WebGL is required.
 
 PostGIS integration tests require `WEBDB_TEST_CONNECTION_JSON` pointing to an explicitly disposable database with PostGIS installed: `cargo test --manifest-path backend/Cargo.toml --test postgis -- --ignored`.
 
@@ -117,7 +120,7 @@ Use **Save** to name a query, **Saved** to open it in its own tab, and **Update*
 
 The connection page also provides **Test connection**, **Import from URL**, password visibility, and optional **Read-only mode**. Testing does not create or replace a session or save a profile. Read-only mode blocks record/schema mutations and database-settings writes on the backend and survives saved reconnects and database switches. Existing profiles keep their previous editing behavior.
 
-URL import accepts `postgres://`, `postgresql://`, `mysql://`, `mariadb://`, and `sqlserver://` URI syntax, with percent-encoded credentials. Omit the database to select instance discovery. TLS defaults to disabled when no TLS option is supplied; accepted URL options are `sslmode`, `ssl-mode`, `ssl`, or `encrypt` (only one), with verified values `verify-full`, `VERIFY_IDENTITY`, or `true`, or disabled values `disable`, `DISABLED`, or `false`. Other options and TLS modes are rejected. ADO/JDBC connection strings are unsupported.
+URL import accepts `postgres://`, `postgresql://`, `mysql://`, `mariadb://`, and `sqlserver://` URI syntax, with percent-encoded credentials. Omit the database to select instance discovery. TLS defaults to verified for remote hosts and disabled for explicit loopback hosts when no TLS option is supplied; accepted URL options are `sslmode`, `ssl-mode`, `ssl`, or `encrypt` (only one), with verified values `verify-full`, `VERIFY_IDENTITY`, or `true`, or disabled values `disable`, `DISABLED`, or `false`. Other options and TLS modes are rejected. ADO/JDBC connection strings are unsupported.
 
 Open the **Verify TLS connection** modal to upload an optional PEM CA certificate and a paired client certificate/private key for PostgreSQL, MySQL, or MariaDB (32 KiB each, unencrypted private keys). Files are sent as contents, never server filesystem paths, and stored only in session memory unless saving to the encrypted backend vault is selected. SQL Server custom certificates and built-in SSH tunnels are not yet supported. See the [screenshot audit](connection-page-audit.md) for the feature comparison and remaining priorities.
 
@@ -169,7 +172,7 @@ PowerShell uses `$env:WEBDB_TEST_CONNECTION_JSON='...'` instead of `export`. DBs
 
 ## Security and scope
 
-DBsaur is a local, single-user tool. The bundled interface sends credentials to the protected loopback API inside the desktop process. There are no analytics, font CDNs, or persistent browser credentials. Optional PostGIS basemaps load tiles and fonts from vijimaps.com, sharing the client IP address and viewed map area with that service. Password fields clear on submission. Unless you opt into saving a connection, credentials stay in bounded server memory, expire after eight hours, and are removed on disconnect or process exit; a periodic cleanup removes expired entries within a minute. Sessions use random opaque IDs in `HttpOnly`, `SameSite=Strict` cookies. Refreshing the page restores a valid session without returning its password.
+DBsaur is a local, single-user tool. The bundled interface sends credentials to the protected loopback API inside the desktop process. There are no analytics, font CDNs, or persistent browser credentials. PostGIS map previews default to an offline coordinate grid. Privacy settings can enable a custom XYZ tile URL or vector style JSON URL; its server receives your IP address and viewed map area. Password fields clear on submission. Unless you opt into saving a connection, credentials stay in bounded server memory, expire after eight hours, and are removed on disconnect or process exit; a periodic cleanup removes expired entries within a minute. Sessions use random opaque IDs in `HttpOnly`, `SameSite=Strict` cookies. Refreshing the page restores a valid session without returning its password.
 
 Browsing uses query validation (plus read-only transactions where supported), statement and lock timeouts, quoted identifiers, bound parameters, and at most 1,000 rows per page. Use a PostgreSQL account with only the necessary privileges; browsing needs `SELECT`, while explicit editing requires corresponding write privileges. Large integers and decimals are returned as strings. JSON and array columns retain their database text representation to preserve nested numeric precision. Sorting uses native database values. Pagination is offset-based: concurrent changes can shift rows, and views without a sortable unique key have no guaranteed stable order. Large cell contents are returned in full; page size is not a response-byte limit.
 
@@ -268,3 +271,29 @@ The ignored integration test creates and removes a randomly named fixture collec
 set `WEBDB_TEST_MONGODB_CONNECTION_JSON` to connection JSON for a disposable database,
 then run `cargo test --manifest-path backend/Cargo.toml --test mongodb -- --ignored`.
 The fixture account needs insert/update/delete/drop privileges.
+
+## Vault backup and recovery
+
+Choose **Vault backup** in the header. Generate a recovery passphrase or enter
+a unique passphrase of at least 12 characters, store it separately, and export
+the `.dbsaur-vault` file. A first-profile reminder opens this dialog once per
+webview profile. The generated passphrase is shown only in that dialog and is
+not saved by DBsaur. Keep the backup and passphrase safe; neither can recover
+the other. Test importing into a separate installation before relying on it.
+
+The export uses AES-256-GCM and PBKDF2-HMAC-SHA-256 with 600,000 iterations,
+a random salt and nonce. Credentials are encrypted before download. Import
+unlocks the file in memory and atomically adds its profiles, with fresh vault
+record IDs and encryption; existing profiles remain. A failed import adds none.
+The combined vault limit is 100 profiles. Import does not connect to any server.
+
+If `vault.key` is missing while `connections.sqlite` exists, the desktop app
+preserves those original files and opens `connections.recovered.sqlite` with
+`vault.recovered.key` so you can import a backup. Restoring the original key
+selects the original store again. Keep both files from a store together when
+making OS-level backups. Unsupported/manual key rotation, invalid key files,
+or loss of a recovery-store key require restoring the matching file pair or
+moving the damaged pair aside while the app is closed before importing into a
+fresh installation. Never delete the only copy. An encrypted export must have
+been created before the original key was lost; it cannot decrypt an old vault
+without its key.

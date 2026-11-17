@@ -22,7 +22,7 @@ test('VijiTiles style validates and geometry stays above the basemap when toggle
   const full = geometryMapStyle(geometry, basemap)
   assert.deepEqual(validateStyleMin(full).map(error => error.message), [])
   assert.deepEqual(validateStyleMin(plain).map(error => error.message), [])
-  assert.deepEqual(Object.keys(plain.sources), ['webdb-geometry'])
+  assert.deepEqual(Object.keys(plain.sources), ['offline-grid', 'webdb-geometry'])
   assert.equal(plain.glyphs, undefined)
   assert.equal(full.sources['webdb-geometry'].data.geometry, geometry)
   assert.deepEqual(full.layers.slice(-3).map(layer => layer.id), ['webdb-geometry-fill', 'webdb-geometry-line', 'webdb-geometry-point'])

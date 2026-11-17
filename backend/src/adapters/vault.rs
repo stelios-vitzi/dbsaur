@@ -64,6 +64,44 @@ impl SqliteVault {
 }
 #[async_trait]
 impl ConnectionRepository for SqliteVault {
+    async fn import(&self, profiles: Vec<VaultProfile>) -> AppResult<()> {
+        if profiles.is_empty() || profiles.len() > 100 {
+            return Err(invalid("Import between 1 and 100 saved connections."));
+        }
+        let mut records = Vec::new();
+        for profile in profiles {
+            if profile.name.trim().is_empty()
+                || profile.name.len() > 128
+                || profile.name.chars().any(char::is_control)
+            {
+                return Err(invalid(
+                    "Enter a connection name of at most 128 characters.",
+                ));
+            }
+            profile.input.validate().map_err(invalid)?;
+            let id = uuid::Uuid::new_v4().to_string();
+            let (nonce, ciphertext) = self.encrypted(&id, &profile.input)?;
+            records.push((id, profile.name, nonce, ciphertext));
+        }
+        let imported = self.with_connection(move |connection| {
+            let tx = connection.transaction()?;
+            let count: i64 = tx.query_row("SELECT COUNT(*) FROM saved_connections", [], |row| row.get(0))?;
+            if count + records.len() as i64 > 100 {
+                return Ok(false);
+            }
+            for (id, name, nonce, ciphertext) in records {
+                tx.execute("INSERT INTO saved_connections (id, name, nonce, ciphertext) VALUES (?, ?, ?, ?)", params![id, name, nonce, ciphertext])?;
+            }
+            tx.commit()?;
+            Ok(true)
+        }).await?;
+        if !imported {
+            return Err(invalid(
+                "Import would exceed the 100 saved connection limit. Remove unused profiles first.",
+            ));
+        }
+        Ok(())
+    }
     async fn list(&self) -> AppResult<Vec<SavedConnection>> {
         self.with_connection(|connection| {
             let mut statement =
@@ -247,5 +285,52 @@ mod tests {
             tokio::join!(vault.save("First", &input), vault.save("Second", &input));
         assert_ne!(first.is_ok(), second.is_ok());
         assert_eq!(vault.list().await.unwrap().len(), 100);
+    }
+
+    #[tokio::test]
+    async fn import_preserves_existing_profiles_and_rejects_invalid_batches_atomically() {
+        let vault = SqliteVault::open(":memory:", &[8; 32]).await.unwrap();
+        let input: ConnectionInput = serde_json::from_value(serde_json::json!({"provider":"postgres","host":"remote","port":5432,"database":"app","username":"user","password":"backup-secret","ssl":true})).unwrap();
+        assert!(
+            input.read_only,
+            "Old profiles without a lock setting default to locked"
+        );
+        let existing = vault.save("Existing", &input).await.unwrap();
+        vault
+            .import(vec![VaultProfile {
+                name: "Imported".into(),
+                input: input.clone(),
+            }])
+            .await
+            .unwrap();
+        assert_eq!(vault.list().await.unwrap().len(), 2);
+        assert_eq!(
+            vault.load(&existing).await.unwrap().password,
+            "backup-secret"
+        );
+        assert!(
+            vault
+                .import(vec![
+                    VaultProfile {
+                        name: "Valid".into(),
+                        input: input.clone()
+                    },
+                    VaultProfile {
+                        name: "".into(),
+                        input: input.clone()
+                    }
+                ])
+                .await
+                .is_err()
+        );
+        assert_eq!(vault.list().await.unwrap().len(), 2);
+        let too_many = (0..99)
+            .map(|_| VaultProfile {
+                name: "Overflow".into(),
+                input: input.clone(),
+            })
+            .collect();
+        assert!(vault.import(too_many).await.is_err());
+        assert_eq!(vault.list().await.unwrap().len(), 2);
     }
 }
