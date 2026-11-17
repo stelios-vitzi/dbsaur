@@ -6,6 +6,7 @@ import ts from 'typescript'
 import * as vue from 'vue'
 import { layoutSchemaTables } from '../app/utils/schemaFlowLayout.ts'
 import { DatabaseChangeCancelled } from '../app/utils/databaseChange.ts'
+import * as diagramScope from '../app/utils/schemaDiagramScope.ts'
 
 // Exercise the component's actual setup and pointer actions without a browser or database.
 const source = readFileSync(new URL('../app/components/SchemaDiagram.vue', import.meta.url), 'utf8')
@@ -30,14 +31,14 @@ function table(name, keys = []) {
   }
 }
 
-function setup(t) {
+function setup(t, { tables, selectedTable = null } = {}) {
   const parent = table('parents', ['id'])
   const child = table('children', ['id'])
   const writes = []
   const props = vue.reactive({
     database: 'sample',
-    tables: [parent, child],
-    selectedTable: null,
+    tables: tables ?? [parent, child],
+    selectedTable,
     loading: false,
     editable: true,
     disabled: false,
@@ -63,7 +64,9 @@ function setup(t) {
         ? { ...vue, ...runtime }
         : name === '../utils/databaseChange'
           ? { DatabaseChangeCancelled }
-          : { layoutSchemaTables },
+          : name === '../utils/schemaDiagramScope'
+            ? diagramScope
+            : { layoutSchemaTables },
     module,
     module.exports,
     ...Object.values(runtime),
@@ -186,4 +189,84 @@ test('database rejection preserves the chosen fields and offers a specific recov
   assert.equal(diagram.pendingRelationship.value.referencedColumn, 'id')
   assert.match(diagram.relationshipFailureHint.value, /matching database types/)
   assert.equal(diagram.applyingRelationship.value, false)
+})
+
+// A chain hub <- t00 <- t01 ... plus many unrelated tables, larger than the full-view limit.
+function largeSchema() {
+  const tables = Array.from({ length: 40 }, (_, index) =>
+    table(`t${String(index).padStart(2, '0')}`, ['id']),
+  )
+  const link = (from, to) =>
+    tables[from].foreignKeys.push({
+      name: `${tables[from].name}_${tables[to].name}_fkey`,
+      column: 'parent_id',
+      referencedSchema: 'public',
+      referencedTable: tables[to].name,
+      referencedColumn: 'id',
+    })
+  link(1, 0)
+  link(2, 1)
+  link(3, 2)
+  link(4, 0)
+  return tables
+}
+
+const names = (diagram) => diagram.visibleTables.value.map((item) => item.name)
+
+test('small schemas open with every table in view', (t) => {
+  const { diagram } = setup(t)
+  assert.deepEqual(names(diagram), ['children', 'parents'])
+  assert.equal(diagram.scopeAll.value, true)
+})
+
+test('large schemas open around the selected table instead of drawing everything', (t) => {
+  const tables = largeSchema()
+  const { diagram } = setup(t, { tables, selectedTable: tables[1] })
+  assert.deepEqual(names(diagram), ['t00', 't01', 't02'])
+  assert.equal(diagram.edges.value.length, 2)
+  assert.equal(diagram.hiddenNeighborCount(tables[0]), 1)
+  assert.equal(diagram.hiddenRelationshipCount.value, 2)
+  diagram.changeFocusDepth(2)
+  assert.deepEqual(names(diagram), ['t00', 't01', 't02', 't03', 't04'])
+})
+
+test('large schemas without a selection start empty with connected suggestions', (t) => {
+  const { diagram } = setup(t, { tables: largeSchema() })
+  assert.equal(diagram.visibleTables.value.length, 0)
+  assert.deepEqual(
+    diagram.startingTables.value.map((entry) => entry.table.name),
+    ['t00', 't01', 't02', 't03', 't04'],
+  )
+})
+
+test('expanding, hiding, and finding tables adjust only the scoped view', (t) => {
+  const tables = largeSchema()
+  const { diagram } = setup(t, { tables, selectedTable: tables[3] })
+  assert.deepEqual(names(diagram), ['t02', 't03'])
+  diagram.expandTable(tables[2])
+  assert.deepEqual(names(diagram), ['t01', 't02', 't03'])
+  diagram.hideTable(tables[3])
+  assert.deepEqual(names(diagram), ['t01', 't02'])
+  assert.equal(diagram.focusKey.value, null)
+  diagram.finder.value = 't39'
+  diagram.chooseFinderTable(diagram.finderMatches.value[0], 'add')
+  assert.deepEqual(names(diagram), ['t01', 't02', 't39'])
+  assert.equal(diagram.finder.value, '')
+})
+
+test('choosing a relationship target outside the view brings it into view', (t) => {
+  const tables = largeSchema()
+  const { diagram } = setup(t, { tables, selectedTable: tables[3] })
+  diagram.beginRelationship(tables[3], 'parent_id')
+  diagram.changeRelationshipTarget(diagram.tableKey(tables[30]))
+  assert.ok(names(diagram).includes('t30'))
+  assert.equal(diagram.pendingRelationship.value.referencedTable, 't30')
+})
+
+test('a table created while scoped is added to the view', async (t) => {
+  const tables = largeSchema()
+  const { diagram, props } = setup(t, { tables, selectedTable: tables[3] })
+  props.tables = [...props.tables, table('new_table', ['id'])]
+  await vue.nextTick()
+  assert.ok(names(diagram).includes('new_table'))
 })

@@ -29,6 +29,8 @@ import minus from '@material-symbols/svg-400/outlined/remove.svg?raw'
 import trash from '@material-symbols/svg-400/outlined/delete.svg?raw'
 import edit from '@material-symbols/svg-400/outlined/edit.svg?raw'
 import map from '@material-symbols/svg-400/outlined/map.svg?raw'
+import focus from '@material-symbols/svg-400/outlined/filter_center_focus.svg?raw'
+import hide from '@material-symbols/svg-400/outlined/visibility_off.svg?raw'
 
 const props = defineProps<{ name: string; size?: number }>()
 // Unmodified Google Material Symbols from the pinned package; no remote requests.
@@ -61,6 +63,8 @@ const icons: Record<string, string> = {
   trash,
   edit,
   map,
+  focus,
+  hide,
 }
 const paths = computed(() =>
   [...(icons[props.name] || database).matchAll(/<path d="([^"]+)"/g)].map((match) => match[1]),

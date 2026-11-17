@@ -5,6 +5,14 @@ import AppIcon from './AppIcon.vue'
 import { DatabaseChangeCancelled } from '../utils/databaseChange'
 import type { RelationshipChange, TableInfo } from '../../shared/database'
 import { layoutSchemaTables } from '../utils/schemaFlowLayout'
+import {
+  connectedStartingTables,
+  diagramTableKey,
+  findDiagramTables,
+  fullDiagramTableLimit,
+  relationshipAdjacency,
+  relationshipNeighborhood,
+} from '../utils/schemaDiagramScope'
 
 const props = defineProps<{
   database: string
@@ -32,8 +40,15 @@ const connectionSides = ['left', 'right'] as const
 const schemaColors = ['#93b8f2', '#8fc9a6', '#d9b77e', '#c2a6e8', '#e6a39d', '#8ac9d0']
 const dialog = useTemplateRef<HTMLDialogElement>('dialog')
 const viewport = useTemplateRef<HTMLDivElement>('viewport')
-const filter = ref('')
+const finder = ref('')
 const zoom = ref(1)
+// The diagram renders a scoped subset of tables; large schemas never draw everything implicitly.
+const scopeReady = ref(false)
+const scopeAll = ref(false)
+const scopeKeys = ref(new Set<string>())
+const focusKey = ref<string | null>(null)
+const focusDepth = ref<1 | 2>(1)
+const layoutGeneration = ref(0)
 const pan = ref({ x: 0, y: 0 })
 const positions = ref<Record<string, { x: number; y: number }>>({})
 const expandedTables = ref(new Set<string>())
@@ -148,9 +163,7 @@ const relationshipFailureHint = computed(() => {
   return 'Your field choices are preserved. Review the reason above, adjust the selected fields, and retry.'
 })
 
-function tableKey(table: Pick<TableInfo, 'schema' | 'name'>) {
-  return JSON.stringify([table.schema, table.name])
-}
+const tableKey = diagramTableKey
 function foreignKeys(table: TableInfo) {
   return table.foreignKeys ?? []
 }
@@ -178,16 +191,23 @@ function isSelectedRelationship(relationship: RelationshipChange) {
     selected.constraintName === relationship.constraintName
   )
 }
+const referencedColumns = computed(() => {
+  const columns = new Map<string, Set<string>>()
+  for (const table of props.tables) {
+    for (const key of foreignKeys(table)) {
+      const target = tableKey({ schema: key.referencedSchema, name: key.referencedTable })
+      if (!columns.has(target)) columns.set(target, new Set())
+      columns.get(target)!.add(key.referencedColumn)
+    }
+  }
+  return columns
+})
 function relationshipFieldCount(table: TableInfo) {
   let lastLinkedIndex = -1
   for (const key of foreignKeys(table))
     lastLinkedIndex = Math.max(lastLinkedIndex, table.columns.indexOf(key.column))
-  for (const candidate of props.tables) {
-    for (const key of foreignKeys(candidate)) {
-      if (key.referencedSchema === table.schema && key.referencedTable === table.name)
-        lastLinkedIndex = Math.max(lastLinkedIndex, table.columns.indexOf(key.referencedColumn))
-    }
-  }
+  for (const column of referencedColumns.value.get(tableKey(table)) ?? [])
+    lastLinkedIndex = Math.max(lastLinkedIndex, table.columns.indexOf(column))
   return Math.max(shownColumns, lastLinkedIndex + 1)
 }
 function displayedColumnCount(table: TableInfo) {
@@ -213,27 +233,138 @@ const sortedTables = computed(() =>
     (a, b) => a.schema.localeCompare(b.schema) || a.name.localeCompare(b.name),
   ),
 )
-const flowPositions = computed(() => layoutSchemaTables(sortedTables.value))
+const tablesByKey = computed(() => new Map(props.tables.map((table) => [tableKey(table), table])))
+const adjacency = computed(() => relationshipAdjacency(props.tables))
+const visibleKeys = computed(() =>
+  scopeAll.value
+    ? new Set(tablesByKey.value.keys())
+    : new Set([...scopeKeys.value].filter((key) => tablesByKey.value.has(key))),
+)
+const visibleTables = computed(() =>
+  sortedTables.value.filter((table) => visibleKeys.value.has(tableKey(table))),
+)
+const focusedTable = computed(() =>
+  focusKey.value ? tablesByKey.value.get(focusKey.value) : undefined,
+)
+const startingTables = computed(() =>
+  connectedStartingTables(sortedTables.value, adjacency.value, 8),
+)
+const finderMatches = computed(() => findDiagramTables(sortedTables.value, finder.value, 12))
+function hiddenNeighborCount(table: TableInfo) {
+  let count = 0
+  for (const key of adjacency.value.get(tableKey(table)) ?? [])
+    if (!visibleKeys.value.has(key)) count += 1
+  return count
+}
+const hiddenRelationshipCount = computed(() => {
+  let count = 0
+  for (const key of visibleKeys.value) count += hiddenNeighborCount(tablesByKey.value.get(key)!)
+  return count
+})
+function setScope(keys: Iterable<string>, all = false) {
+  const next = new Set(all ? [] : keys)
+  if (
+    scopeAll.value === all &&
+    next.size === scopeKeys.value.size &&
+    [...next].every((key) => scopeKeys.value.has(key))
+  )
+    return
+  scopeAll.value = all
+  scopeKeys.value = next
+  layoutGeneration.value += 1
+}
+function focusOn(table: TableInfo, depth: 1 | 2 = focusDepth.value) {
+  const key = tableKey(table)
+  focusKey.value = key
+  focusDepth.value = depth
+  activeTable.value = key
+  setScope(relationshipNeighborhood(adjacency.value, key, depth))
+}
+function changeFocusDepth(depth: 1 | 2) {
+  focusDepth.value = depth
+  if (focusedTable.value) focusOn(focusedTable.value, depth)
+}
+function showAllTables() {
+  focusKey.value = null
+  setScope([], true)
+}
+function clearScope() {
+  focusKey.value = null
+  activeTable.value = null
+  setScope([])
+}
+function addToScope(table: TableInfo) {
+  if (!visibleKeys.value.has(tableKey(table))) setScope([...visibleKeys.value, tableKey(table)])
+}
+function expandTable(table: TableInfo) {
+  setScope([...visibleKeys.value, ...(adjacency.value.get(tableKey(table)) ?? [])])
+}
+function hideTable(table: TableInfo) {
+  const key = tableKey(table)
+  if (focusKey.value === key) focusKey.value = null
+  if (activeTable.value === key) activeTable.value = null
+  if (hoveredTable.value === key) hoveredTable.value = null
+  setScope([...visibleKeys.value].filter((visible) => visible !== key))
+}
+function chooseFinderTable(table: TableInfo | undefined, mode: 'focus' | 'add' = 'focus') {
+  if (!table) return
+  if (mode === 'add') addToScope(table)
+  else focusOn(table)
+  activeTable.value = tableKey(table)
+  finder.value = ''
+}
+function clearFinder(event: KeyboardEvent) {
+  if (!finder.value) return
+  // Escape clears the search first instead of closing the whole dialog.
+  event.preventDefault()
+  event.stopPropagation()
+  finder.value = ''
+}
+function initializeScope() {
+  const selected = props.selectedTable && tablesByKey.value.get(tableKey(props.selectedTable))
+  if (props.tables.length <= fullDiagramTableLimit) showAllTables()
+  else if (selected) focusOn(selected, 1)
+  else clearScope()
+}
+watch(
+  () => [props.loading, props.tables.length] as const,
+  ([loading, count]) => {
+    if (scopeReady.value || loading || !count) return
+    scopeReady.value = true
+    initializeScope()
+  },
+  { immediate: true },
+)
+// Keep tables created from the diagram in view without pulling in a full schema reload.
+watch(
+  () => [...tablesByKey.value.keys()],
+  (next, previous) => {
+    if (!scopeReady.value || scopeAll.value || !previous?.length) return
+    const known = new Set(previous)
+    const added = next.filter((key) => !known.has(key))
+    if (added.length && added.length <= 3) setScope([...visibleKeys.value, ...added])
+  },
+)
+const flowPositions = computed(() => layoutSchemaTables(visibleTables.value))
+let appliedLayoutGeneration = -1
 watch(
   flowPositions,
-  (layout, previousLayout) => {
+  (layout) => {
+    const rearrange = appliedLayoutGeneration !== layoutGeneration.value
+    appliedLayoutGeneration = layoutGeneration.value
     positions.value = Object.fromEntries(
-      Object.entries(layout).map(([key, point]) => [key, positions.value[key] ?? point]),
+      Object.entries(layout).map(([key, point]) => [
+        key,
+        rearrange ? point : (positions.value[key] ?? point),
+      ]),
     )
-    if (previousLayout && Object.keys(previousLayout).length === 0) void fitView()
+    if (rearrange) void fitView()
   },
   { immediate: true },
 )
 function positionOf(table: TableInfo) {
   return positions.value[tableKey(table)] ?? { x: 72, y: 72 }
 }
-const visibleTables = computed(() => {
-  const query = filter.value.trim().toLowerCase()
-  if (!query) return sortedTables.value
-  return sortedTables.value.filter((table) =>
-    `${table.schema}.${table.name} ${table.columns.join(' ')}`.toLowerCase().includes(query),
-  )
-})
 const relationshipMetadataMissing = computed(
   () =>
     props.tables.length > 0 && props.tables.every((table) => !Object.hasOwn(table, 'foreignKeys')),
@@ -289,7 +420,6 @@ const canApplyRelationshipDraft = computed(
     !applyingRelationship.value &&
     !props.disabled,
 )
-const visibleKeys = computed(() => new Set(visibleTables.value.map(tableKey)))
 const relationships = computed(() =>
   visibleTables.value.flatMap((source) =>
     foreignKeys(source)
@@ -306,8 +436,8 @@ const relationshipCount = computed(() =>
     (count, table) =>
       count +
       foreignKeys(table).filter((key) =>
-        props.tables.some(
-          (target) => target.schema === key.referencedSchema && target.name === key.referencedTable,
+        tablesByKey.value.has(
+          tableKey({ schema: key.referencedSchema, name: key.referencedTable }),
         ),
       ).length,
     0,
@@ -359,7 +489,13 @@ function relationshipPath(relationship: RelationshipChange) {
     (table) =>
       table.schema === relationship.referencedSchema && table.name === relationship.referencedTable,
   )
-  if (!foreignTable || !referencedTable) return ''
+  if (
+    !foreignTable ||
+    !referencedTable ||
+    !visibleKeys.value.has(tableKey(foreignTable)) ||
+    !visibleKeys.value.has(tableKey(referencedTable))
+  )
+    return ''
   const foreignCenter = positionOf(foreignTable).x + nodeWidth / 2
   const referencedCenter = positionOf(referencedTable).x + nodeWidth / 2
   if (foreignTable === referencedTable) {
@@ -580,10 +716,14 @@ function beginRelationship(table?: TableInfo, column?: string) {
   const source =
     table ??
     relationshipTables.value.find(
-      (item) => tableKey(item) === tableKey(props.selectedTable ?? { schema: '', name: '' }),
+      (item) =>
+        visibleKeys.value.has(tableKey(item)) &&
+        tableKey(item) === tableKey(props.selectedTable ?? { schema: '', name: '' }),
     ) ??
+    relationshipTables.value.find((item) => visibleKeys.value.has(tableKey(item))) ??
     relationshipTables.value[0]
   if (!source) return
+  if (!table) addToScope(source)
   selectedRelationship.value = null
   relationshipDraft.value = null
   relationshipError.value = ''
@@ -651,7 +791,9 @@ function clickField(table: TableInfo, column: string) {
 }
 function changeRelationshipSource(key: string) {
   const table = relationshipTables.value.find((item) => tableKey(item) === key)
-  if (table) beginRelationship(table)
+  if (!table) return
+  beginRelationship(table)
+  addToScope(table)
 }
 function reversePendingRelationship() {
   const link = pendingRelationship.value
@@ -692,6 +834,7 @@ function changeRelationshipTarget(key: string) {
   const targetTable = props.tables.find((table) => tableKey(table) === key)
   const link = activeRelationship.value
   if (!targetTable || !link) return
+  addToScope(targetTable)
   link.referencedSchema = targetTable.schema
   link.referencedTable = targetTable.name
   if (!targetTable.columns.includes(link.referencedColumn))
@@ -832,7 +975,6 @@ onMounted(async () => {
   dialog.value?.showModal()
   await fitView()
 })
-watch(filter, fitView)
 watch(
   () => props.tables.length,
   () => fitView(),
@@ -886,23 +1028,60 @@ watch(
           >
             <AppIcon name="plus" :size="16" /><span>Add table</span>
           </button>
-          <label class="search-box schema-diagram-search">
-            <AppIcon name="search" :size="15" />
-            <input
-              v-model="filter"
-              placeholder="Find tables or columns"
-              aria-label="Find tables or columns"
-            />
-            <button
-              v-if="filter"
-              type="button"
-              class="icon-button"
-              aria-label="Clear search"
-              @click="filter = ''"
+          <div class="schema-diagram-finder">
+            <label class="search-box schema-diagram-search">
+              <AppIcon name="search" :size="15" />
+              <input
+                v-model="finder"
+                placeholder="Find a table to show"
+                aria-label="Find a table to show in the diagram"
+                aria-controls="schema-diagram-finder-results"
+                @keydown.enter.prevent="chooseFinderTable(finderMatches[0])"
+                @keydown.esc="clearFinder"
+              />
+              <button
+                v-if="finder"
+                type="button"
+                class="icon-button"
+                aria-label="Clear search"
+                @click="finder = ''"
+              >
+                <AppIcon name="close" :size="13" />
+              </button>
+            </label>
+            <ul
+              v-if="finder.trim()"
+              id="schema-diagram-finder-results"
+              class="schema-diagram-finder-results"
+              aria-label="Matching tables"
             >
-              <AppIcon name="close" :size="13" />
-            </button>
-          </label>
+              <li v-for="table in finderMatches" :key="tableKey(table)">
+                <button
+                  type="button"
+                  class="schema-diagram-finder-focus"
+                  :title="`Show ${table.schema}.${table.name} with its related tables`"
+                  @click="chooseFinderTable(table)"
+                >
+                  <small>{{ table.schema }}</small>
+                  <span>{{ table.name }}</span>
+                  <em v-if="visibleKeys.has(tableKey(table))">In view</em>
+                </button>
+                <button
+                  v-if="!visibleKeys.has(tableKey(table))"
+                  type="button"
+                  class="icon-button"
+                  :aria-label="`Add ${table.schema}.${table.name} to the current view`"
+                  title="Add to the current view"
+                  @click="chooseFinderTable(table, 'add')"
+                >
+                  <AppIcon name="plus" :size="15" />
+                </button>
+              </li>
+              <li v-if="!finderMatches.length" class="schema-diagram-finder-empty">
+                No matching tables
+              </li>
+            </ul>
+          </div>
           <div class="diagram-zoom-controls" role="group" aria-label="Diagram zoom controls">
             <button
               type="button"
@@ -952,6 +1131,66 @@ watch(
         </div>
       </header>
 
+      <div
+        v-if="tables.length && !loading"
+        class="schema-diagram-scope"
+        role="group"
+        aria-label="Diagram scope"
+      >
+        <span class="schema-diagram-scope-count">
+          Showing <strong>{{ visibleTables.length }}</strong> of {{ tables.length }}
+          {{ tables.length === 1 ? 'table' : 'tables' }}
+        </span>
+        <template v-if="focusedTable">
+          <span class="schema-diagram-scope-focus">
+            Around <strong>{{ focusedTable.name }}</strong>
+          </span>
+          <div class="schema-diagram-depth" role="group" aria-label="Relationship depth">
+            <button
+              v-for="depth in [1, 2] as const"
+              :key="depth"
+              type="button"
+              :class="{ active: focusDepth === depth }"
+              :aria-pressed="focusDepth === depth"
+              :title="
+                depth === 1 ? 'Tables directly linked to the focus' : 'Also include their links'
+              "
+              @click="changeFocusDepth(depth)"
+            >
+              {{ depth === 1 ? 'Direct links' : '2 steps' }}
+            </button>
+          </div>
+        </template>
+        <span v-if="hiddenRelationshipCount" class="schema-diagram-scope-hidden">
+          {{ hiddenRelationshipCount }} linked
+          {{ hiddenRelationshipCount === 1 ? 'table' : 'tables' }} outside view
+        </span>
+        <div class="schema-diagram-scope-actions">
+          <button
+            v-if="!scopeAll"
+            type="button"
+            class="button secondary small"
+            :title="
+              tables.length > fullDiagramTableLimit
+                ? `Draw all ${tables.length} tables. Large diagrams can be slow and hard to read.`
+                : 'Draw every table'
+            "
+            @click="showAllTables"
+          >
+            Show all {{ tables.length }}
+          </button>
+          <button
+            v-if="visibleTables.length"
+            type="button"
+            class="button secondary small"
+            title="Remove every table from the view"
+            @click="clearScope"
+          >
+            Clear view
+          </button>
+        </div>
+      </div>
+
       <div class="schema-diagram-legend" aria-label="Diagram legend">
         <span><AppIcon name="key" :size="13" /> Primary key</span>
         <span><AppIcon name="check" :size="13" /> Unique key / reference index</span>
@@ -966,8 +1205,8 @@ watch(
         <span v-else class="diagram-legend-hint">
           {{
             editable
-              ? 'Drag between fields, or click a field then its target. Key fields can receive references. Drag table headings to move; drag empty space to pan.'
-              : 'Flow from source tables top to bottom. Drag cards to adjust. Drag empty space to pan.'
+              ? 'Drag between fields, or click a field then its target. Double-click a heading to focus. Drag headings to move; drag empty space to pan.'
+              : 'Flow from source tables top to bottom. Double-click a heading to focus on it. Drag empty space to pan.'
           }}
         </span>
       </div>
@@ -1178,10 +1417,31 @@ watch(
             }}
           </p>
         </div>
-        <div v-else-if="!visibleTables.length" class="schema-diagram-empty">
-          <AppIcon name="search" :size="25" />
-          <h3>No matching tables</h3>
-          <p>Try a different table or column name.</p>
+        <div v-else-if="!visibleTables.length" class="schema-diagram-empty schema-diagram-start">
+          <AppIcon name="diagram" :size="26" />
+          <h3>Choose where to start</h3>
+          <p>
+            This database has {{ tables.length }} {{ tables.length === 1 ? 'table' : 'tables' }}.
+            Start from one table to see its direct relationships, then expand only what you need.
+          </p>
+          <div v-if="startingTables.length" class="schema-diagram-start-list">
+            <button
+              v-for="entry in startingTables"
+              :key="tableKey(entry.table)"
+              type="button"
+              class="button secondary small"
+              :title="`${entry.table.schema}.${entry.table.name}: ${entry.links} linked ${entry.links === 1 ? 'table' : 'tables'}`"
+              @click="focusOn(entry.table)"
+            >
+              {{ entry.table.name }} <small>{{ entry.links }}</small>
+            </button>
+          </div>
+          <p class="schema-diagram-start-hint">
+            Or search for a table above.
+            <button type="button" class="schema-diagram-start-all" @click="showAllTables">
+              Show all {{ tables.length }} tables
+            </button>
+          </p>
         </div>
         <div
           v-else
@@ -1278,8 +1538,10 @@ watch(
               type="button"
               class="schema-diagram-table-heading"
               :aria-label="`Select ${table.schema}.${table.name}`"
+              :title="`Drag to move · Double-click to focus on ${table.name}`"
               @pointerdown.stop="startNodeDrag($event, table)"
               @click="focusTable(table)"
+              @dblclick="focusOn(table)"
             >
               <span class="schema-table-grip" aria-hidden="true"
                 ><i /><i /><i /><i /><i /><i
@@ -1292,6 +1554,26 @@ watch(
                 table.kind.toLowerCase().includes('view') ? 'VIEW' : 'TABLE'
               }}</span>
             </button>
+            <div class="schema-table-tools">
+              <button
+                type="button"
+                class="icon-button"
+                :aria-label="`Focus on ${table.schema}.${table.name} and its related tables`"
+                title="Focus on this table"
+                @click="focusOn(table)"
+              >
+                <AppIcon name="focus" :size="15" />
+              </button>
+              <button
+                type="button"
+                class="icon-button"
+                :aria-label="`Hide ${table.schema}.${table.name} from the diagram`"
+                title="Hide from diagram"
+                @click="hideTable(table)"
+              >
+                <AppIcon name="hide" :size="15" />
+              </button>
+            </div>
             <div class="schema-diagram-columns">
               <div
                 v-for="column in table.columns.slice(0, displayedColumnCount(table))"
@@ -1415,7 +1697,17 @@ watch(
               <p v-if="!table.columns.length" class="schema-columns-empty">No column metadata</p>
             </div>
             <footer class="schema-diagram-table-footer">
-              <span
+              <button
+                v-if="hiddenNeighborCount(table)"
+                type="button"
+                class="schema-table-expand"
+                :aria-label="`Show ${hiddenNeighborCount(table)} linked ${hiddenNeighborCount(table) === 1 ? 'table' : 'tables'} for ${table.schema}.${table.name}`"
+                title="Add the tables linked to this one"
+                @click="expandTable(table)"
+              >
+                <AppIcon name="link" :size="13" />+{{ hiddenNeighborCount(table) }} linked
+              </button>
+              <span v-else
                 >{{ table.columns.length }}
                 {{ table.columns.length === 1 ? 'column' : 'columns' }}</span
               >
@@ -1443,10 +1735,10 @@ watch(
       </main>
 
       <footer class="schema-diagram-footer">
-        <span>Scroll to zoom · Use Fit to bring all visible tables into view</span>
+        <span>Scroll to zoom · Use “+ linked” on a table to grow the view</span>
         <span
-          >{{ visibleTables.length }} of {{ tables.length }} tables <i /> {{ edges.length }} visible
-          relationships</span
+          >{{ visibleTables.length }} of {{ tables.length }} tables <i /> {{ edges.length }} of
+          {{ relationshipCount }} relationships shown</span
         >
       </footer>
     </div>
