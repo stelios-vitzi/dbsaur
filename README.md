@@ -43,7 +43,7 @@ See the [user guide](docs/user-guide.md) for dialect, editing, and connection li
 Rendered from synthetic fixtures; no private database records are shown.
 
 ![Query workspace](docs/images/query-workspace.png)
-![PostGIS geometry preview with offline background](docs/images/postgis-map.png)
+![PostGIS geometry preview with the default VijiTiles basemap](docs/images/postgis-map.png)
 ![MongoDB document browser](docs/images/mongodb-browser.png)
 
 </details>

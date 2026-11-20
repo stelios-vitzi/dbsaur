@@ -1,7 +1,7 @@
 export const privacyConfig = {
   email: 'steliosvitzi@gmail.com',
-  updated: '17 November 2026',
-  version: 4,
+  updated: '21 November 2026',
+  version: 5,
   storageKey: 'webdb.privacy-notice.v1',
   retentionDays: 180,
 }
@@ -39,7 +39,7 @@ export const legalDocuments = {
       ],
       [
         'Browser storage and downloads',
-        'Queries you explicitly save remain in the embedded webview localStorage under webdb.saved-queries.v1 until removed or the app data is cleared. Avoid saving secrets in SQL. The privacy-notice preference stores only its version and expiry for 180 days under webdb.privacy-notice.v1. Unsaved drafts and displayed records remain in memory. JSON exports and clipboard copies remain under your control outside DBsaur. Map preferences and a recovery-reminder flag also remain in local storage; neither contains database credentials. The webview may cache bundled application assets.',
+        'Queries you explicitly save remain in the embedded webview localStorage under webdb.saved-queries.v1 until removed or the app data is cleared. Avoid saving secrets in SQL. The privacy-notice preference stores only its version and expiry for 180 days under webdb.privacy-notice.v1. Unsaved drafts and displayed records remain in memory. JSON exports and clipboard copies remain under your control outside DBsaur. A recovery-reminder flag also remains in local storage. The webview may cache application assets and basemap resources.',
       ],
       [
         'Purposes and legal grounds',
@@ -47,11 +47,11 @@ export const legalDocuments = {
       ],
       [
         'Recipients and international transfers',
-        'Database requests go from your computer to your selected database server over your configured network connection. Signed release builds contact GitHub to check for updates and download them; GitHub receives connection metadata such as your IP address, but no database credentials, queries, or records. DBsaur includes no analytics, advertising, tracking pixels, or remote font services. Your database and network providers control their own locations and data handling.',
+        'Database requests go from your computer to your selected database server over your configured network connection. Signed release builds contact GitHub to check for updates and download them; GitHub receives connection metadata such as your IP address, but no database credentials, queries, or records. DBsaur includes no analytics, advertising, or tracking pixels. Your database and network providers control their own locations and data handling.',
       ],
       [
         'Map backgrounds',
-        'PostGIS geometry previews are processed by your selected database and displayed in the desktop application. Map previews default to an offline coordinate grid. Privacy settings can enable a custom XYZ tile server or vector style JSON URL. Enabled backgrounds share your IP address and viewed map area with the configured provider and any servers referenced by that style. Geometry values, queries, and record attributes are not included in tile requests.',
+        'PostGIS geometry previews are processed by your selected database and displayed in the desktop application. Opening a preview requests map tiles and label fonts from VijiTiles. If VijiTiles fails, the preview requests OpenStreetMap tiles. These services receive your IP address and viewed map area. Basemap requests contain no geometry values, queries, or record attributes.',
       ],
       [
         'Your GDPR rights',

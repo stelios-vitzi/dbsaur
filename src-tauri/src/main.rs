@@ -102,6 +102,11 @@ fn main() {
                 WebviewUrl::External(format!("{}/_desktop/{token}", server::ORIGIN).parse()?),
             )
             .title("DBsaur")
+            .user_agent(concat!(
+                "DBsaur/",
+                env!("CARGO_PKG_VERSION"),
+                " (+https://github.com/stelios-vitzi/dbsaur)"
+            ))
             .inner_size(1440.0, 900.0)
             .min_inner_size(900.0, 600.0)
             .on_navigation(|url| url.origin().ascii_serialization() == server::ORIGIN)

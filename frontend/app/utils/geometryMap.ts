@@ -1,7 +1,57 @@
 import type { Geometry } from 'geojson'
-import type { StyleSpecification } from 'maplibre-gl'
+import type { AddProtocolAction, StyleSpecification } from 'maplibre-gl'
+import vijitilesStyle from '../../assets/maps/vijitiles.json' with { type: 'json' }
 
 export type GeometryBounds = [[number, number], [number, number]]
+
+export const basemapProtocol = 'dbsaur-map'
+const basemapServers: ReadonlyMap<string, string> = new Map([
+  ['vijitiles', 'https://vijimaps.com/tiles/'],
+  ['osm', 'https://tile.openstreetmap.org/'],
+])
+
+const openStreetMapStyle: StyleSpecification = {
+  version: 8,
+  sources: {
+    osm: {
+      type: 'raster',
+      tiles: [`${basemapProtocol}://osm/{z}/{x}/{y}.png`],
+      tileSize: 256,
+      maxzoom: 19,
+      attribution:
+        '© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap</a> contributors',
+    },
+  },
+  layers: [{ id: 'osm', type: 'raster', source: 'osm' }],
+}
+
+// MapLibre suppresses tile HTTP 404s. Report missing or stalled resources as
+// errors so the preview can switch providers.
+export const fetchBasemapResource: AddProtocolAction = async ({ url }, { signal }) => {
+  const resource = new URL(url)
+  const server = basemapServers.get(resource.hostname)
+  if (!server) throw new Error('Unknown basemap provider')
+  const response = await fetch(server + resource.pathname.slice(1), {
+    credentials: 'omit',
+    signal: AbortSignal.any([signal, AbortSignal.timeout(8000)]),
+  })
+  if (!response.ok) throw new Error(`Basemap request failed (HTTP ${response.status})`)
+  const data = await response.arrayBuffer()
+  if (data.byteLength === 0) throw new Error('Empty basemap response')
+  return {
+    data,
+    cacheControl: response.headers.get('Cache-Control') ?? undefined,
+    expires: response.headers.get('Expires') ?? undefined,
+  }
+}
+
+export function mapBackgrounds(geometry: Geometry): StyleSpecification[] {
+  return [
+    geometryMapStyle(geometry, vijitilesStyle as unknown as StyleSpecification),
+    geometryMapStyle(geometry, openStreetMapStyle),
+    geometryMapStyle(geometry),
+  ]
+}
 
 export function geometryBounds(geometry: Geometry): GeometryBounds | null {
   let west = Infinity

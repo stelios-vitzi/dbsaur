@@ -1,13 +1,18 @@
 <script setup lang="ts">
-import { ref, watch, onMounted, onScopeDispose, useTemplateRef } from 'vue'
+import { ref, onMounted, onScopeDispose, useTemplateRef } from 'vue'
 import { $fetch } from '../services/http'
 import AppIcon from './AppIcon.vue'
 
-import type { Map as MapLibreMap, StyleSpecification } from 'maplibre-gl'
+import type { Map as MapLibreMap } from 'maplibre-gl'
 import type { Geometry } from 'geojson'
 import mapWorkerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?url'
-import { geometryBounds, geometryMapStyle, type GeometryBounds } from '../utils/geometryMap'
-import { loadMapPreferences } from '../utils/mapPreferences'
+import {
+  basemapProtocol,
+  fetchBasemapResource,
+  geometryBounds,
+  mapBackgrounds,
+  type GeometryBounds,
+} from '../utils/geometryMap'
 
 const props = defineProps<{ value: string; column: string }>()
 const emit = defineEmits<{ close: [] }>()
@@ -17,54 +22,15 @@ const loading = ref(true)
 const error = ref('')
 const notice = ref('')
 const srid = ref<number>()
-const preferences = loadMapPreferences()
-const background = ref(preferences.enabled && !!preferences.url)
-const tileError = ref(false)
+const offline = ref(false)
 let map: MapLibreMap | undefined
-let geometry: Geometry | undefined
 let bounds: GeometryBounds | null = null
-let basemap: StyleSpecification | undefined
 let disposed = false
 const controller = new AbortController()
-let backgroundVersion = 0
 
 function fit() {
   if (bounds) map?.fitBounds(bounds, { padding: 32, maxZoom: 16, duration: 0 })
 }
-async function updateBackground() {
-  if (!map || !geometry) return
-  const version = ++backgroundVersion
-  if (!background.value) {
-    map.setStyle(geometryMapStyle(geometry), { diff: false })
-    return
-  }
-  tileError.value = false
-  try {
-    if (!preferences.enabled || !preferences.url) return
-    basemap ??= preferences.url.includes('{z}')
-      ? {
-          version: 8,
-          sources: {
-            basemap: {
-              type: 'raster',
-              tiles: [preferences.url],
-              tileSize: 256,
-              attribution: preferences.attribution
-                .replaceAll('&', '&amp;')
-                .replaceAll('<', '&lt;')
-                .replaceAll('>', '&gt;'),
-            },
-          },
-          layers: [{ id: 'basemap', type: 'raster', source: 'basemap' }],
-        }
-      : await $fetch<StyleSpecification>(preferences.url, { signal: controller.signal })
-    if (!disposed && version === backgroundVersion && background.value)
-      map.setStyle(geometryMapStyle(geometry, basemap), { diff: false })
-  } catch {
-    if (!disposed && version === backgroundVersion) tileError.value = true
-  }
-}
-watch(background, updateBackground)
 onMounted(async () => {
   dialog.value?.showModal()
   try {
@@ -83,7 +49,7 @@ onMounted(async () => {
         'This geometry has no coordinate reference system (SRID 0). Assign the correct SRID in your database before viewing it on a map.'
       return
     }
-    geometry = preview.geojson
+    const geometry = preview.geojson
     bounds = geometryBounds(geometry)
     if (!bounds) {
       notice.value = 'This geometry has no displayable coordinates.'
@@ -92,9 +58,9 @@ onMounted(async () => {
     const M = await import('maplibre-gl')
     if (disposed || !container.value) return
     M.setWorkerUrl(mapWorkerUrl)
+    M.addProtocol(basemapProtocol, fetchBasemapResource)
     map = new M.Map({
       container: container.value,
-      style: geometryMapStyle(geometry),
       center: [0, 0],
       zoom: 2,
       maxZoom: 22,
@@ -102,19 +68,27 @@ onMounted(async () => {
       attributionControl: false,
     })
     map.addControl(new M.NavigationControl({ showCompass: false }), 'top-left')
-    map.addControl(new M.AttributionControl({ compact: true }), 'bottom-right')
-    map.on('error', () => {
-      if (background.value) {
-        tileError.value = true
-        background.value = false
-      }
+    map.addControl(new M.AttributionControl({ compact: false }), 'bottom-right')
+    const backgrounds = mapBackgrounds(geometry)
+    let background = 0
+    map.on('error', (event) => {
+      const sourceId = (event as { sourceId?: string }).sourceId
+      if (sourceId === 'webdb-geometry' || offline.value) return
+      const failed = background
+      // Replace the style after MapLibre finishes dispatching the error.
+      queueMicrotask(() => {
+        if (disposed || background !== failed) return
+        background += 1
+        offline.value = background === backgrounds.length - 1
+        map?.setStyle(backgrounds[background], { diff: false })
+      })
     })
     map.on('webglcontextlost', () => {
       error.value = 'The map renderer stopped. Close and reopen the preview to try again.'
     })
     map.resize()
     fit()
-    await updateBackground()
+    map.setStyle(backgrounds[background], { diff: false })
   } catch (cause) {
     if (disposed) return
     const failure = cause as { data?: { message?: string } }
@@ -158,17 +132,8 @@ onScopeDispose(() => {
       >
         <AppIcon name="fit" :size="16" />Fit geometry
       </button>
-      <label
-        ><input
-          v-model="background"
-          type="checkbox"
-          :disabled="loading || !!error || !!notice || !preferences.enabled || !preferences.url"
-        />Map background</label
-      >
     </div>
-    <p class="geometry-caption muted">
-      2D preview in WGS 84. Configure optional map backgrounds in Privacy settings.
-    </p>
+    <p class="geometry-caption muted">2D preview in WGS 84.</p>
     <div class="geometry-stage" :aria-busy="loading">
       <div ref="container" class="geometry-map" aria-label="Interactive geometry map" />
       <p
@@ -179,8 +144,8 @@ onScopeDispose(() => {
         {{ loading ? 'Loading geometry…' : error || notice }}
       </p>
     </div>
-    <p v-if="tileError" class="geometry-caption" role="status">
-      Map background could not load. The geometry is still available offline.
+    <p v-if="offline && !error" class="geometry-caption" role="status">
+      Basemap unavailable. Showing the geometry on a coordinate grid.
     </p>
   </dialog>
 </template>
@@ -216,11 +181,6 @@ onScopeDispose(() => {
   flex-wrap: wrap;
   padding-block: 0;
 }
-.geometry-toolbar label {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
 .geometry-caption {
   margin: 12px 20px;
   font-size: 12px;
@@ -232,6 +192,10 @@ onScopeDispose(() => {
   height: min(60vh, 560px);
   min-height: 240px;
   background: #edf1ef;
+}
+.geometry-map :deep(.maplibregl-ctrl-attrib) {
+  color: #253b33;
+  background-color: #fff;
 }
 .geometry-message {
   position: absolute;

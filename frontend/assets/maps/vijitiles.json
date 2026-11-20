@@ -23,7 +23,7 @@
     "vijitiles-basemap": {
       "attribution": "© <a href=\"https://www.openstreetmap.org/copyright\" target=\"_blank\" rel=\"noopener noreferrer\">OpenStreetMap</a> contributors",
       "tiles": [
-        "https://vijimaps.com/tiles/basemap/{z}/{x}/{y}"
+        "dbsaur-map://vijitiles/basemap/{z}/{x}/{y}"
       ],
       "type": "vector",
       "scheme": "xyz",
@@ -37,7 +37,7 @@
       "maxzoom": 14
     }
   },
-  "glyphs": "https://vijimaps.com/tiles/font/{fontstack}/{range}",
+  "glyphs": "dbsaur-map://vijitiles/font/{fontstack}/{range}",
   "transition": {
     "duration": 80,
     "delay": 0
