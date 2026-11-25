@@ -1,85 +1,53 @@
-# DBsaur
+﻿# DBsaur
 
-MongoDB supports highlighted JSON browsing, document editing, and read-only aggregation queries. See the [MongoDB guide](docs/user-guide.md#mongodb) for connections and examples.
+DBsaur is a desktop app for browsing databases, running queries, and reviewing changes before saving them. It supports PostgreSQL, MySQL, MariaDB, SQL Server, SQLite, and MongoDB.
 
-A desktop database workspace for PostgreSQL, MySQL, MariaDB, SQL Server, SQLite, and MongoDB.
-Browse data, run queries, edit records, manage schemas, and preview PostGIS
-geometry from a single local application.
+**[Download DBsaur](https://github.com/stelios-vitzi/dbsaur/releases)** · [User guide](docs/user-guide.md) · [Contributing](CONTRIBUTING.md)
 
-[Releases](https://github.com/stelios-vitzi/dbsaur/releases) ·
-[User guide](docs/user-guide.md) · [Contributing](CONTRIBUTING.md) ·
-[Security](SECURITY.md) · [License](LICENSE)
+![DBsaur query workspace with a database explorer, SQL editor, and result grid](docs/images/query-workspace.png)
 
-DBsaur is in early development. Database changes commit after choosing Save in
-the change-review dialog and can be irreversible; use appropriate database
-permissions and keep backups. Publication requires all desktop builds and dependency
-audits to pass; see the [security policy](SECURITY.md#release-security-gate--11-november-2026).
+## Install and try it
 
-## Features
+Choose the package for your platform from [GitHub Releases](https://github.com/stelios-vitzi/dbsaur/releases). The installer includes the desktop app and its embedded API.
 
-- Explore instances, databases, schemas, tables, columns, keys, and relationships.
-- Browse sortable, paginated data and inspect, copy, or export the current page.
-- Work with independent query tabs, SQL completion, and locally saved queries.
-- Insert, update, and delete records, with explicit schema and database actions.
-- Save connection profiles and credentials in an encrypted local vault.
-- Preview PostGIS geometry and geography on an interactive map.
-- Try the built-in read-only sample workspace without connecting a database.
+| Platform                           | Package          | How to install                                  |
+| ---------------------------------- | ---------------- | ----------------------------------------------- |
+| Windows x64                        | Setup `.exe`     | Run setup and choose current user or all users. |
+| macOS 11+, Intel and Apple Silicon | Universal `.dmg` | Drag DBsaur into Applications.                  |
+| Linux x64, Debian or Ubuntu        | `.deb`           | Run `sudo apt install ./<filename>.deb`.        |
+| Linux x64, Fedora                  | `.rpm`           | Run `sudo dnf install ./<filename>.rpm`.        |
+| Linux x64, portable                | `.AppImage`      | Make the file executable and run it.            |
 
-| Database         | Browsing and SELECT | Record and schema changes | Database settings |
-| ---------------- | ------------------- | ------------------------- | ----------------- |
-| PostgreSQL       | Supported           | Supported                 | Supported         |
-| MySQL 8+         | Supported           | Supported                 | Not supported     |
-| MariaDB 10.6+    | Supported           | Supported                 | Not supported     |
-| SQL Server 2016+ | Supported           | Supported                 | Not supported     |
-| SQLite           | Supported           | Supported with limits     | Not supported     |
+Linux packages require WebKitGTK 4.1. See the [desktop update guide](docs/desktop-updates.md)
+for update support by package type and operating-system signing details.
 
-Provider behavior differs: MySQL and
-MariaDB DDL can commit implicitly, and some generated fields remain read only.
-See the [user guide](docs/user-guide.md) for dialect, editing, and connection limits.
+Open **Sample workspace** to browse read-only example data without a database connection.
+To work with your own data, choose **Add database** and select your provider.
+
+## What you can do
+
+- Explore schemas, tables, keys, and relationships. Sort and page through records, inspect cell values, and export the current page.
+- Run read-only SQL in independent tabs with completion and locally saved queries. Browse and edit MongoDB documents as JSON, and run read-only aggregation queries. [MongoDB guide](docs/user-guide.md#mongodb)
+- Review record and schema changes before saving them. Supported changes depend on the provider. [Database provider guide](docs/user-guide.md#database-providers)
+- Open interactive previews of PostGIS geometry and geography directly from result cells. [PostGIS map guide](docs/user-guide.md#postgis-map-previews)
+- Reconnect using profiles and credentials stored in an encrypted local vault. [Vault backup and recovery](docs/user-guide.md#vault-backup-and-recovery)
 
 <details>
-<summary>Query workspace, PostGIS map, and MongoDB browser screenshots</summary>
+<summary>See the PostGIS map and MongoDB document browser</summary>
 
-Rendered from synthetic fixtures; no private database records are shown.
-
-![Query workspace](docs/images/query-workspace.png)
-![PostGIS geometry preview with the default VijiTiles basemap](docs/images/postgis-map.png)
-![MongoDB document browser](docs/images/mongodb-browser.png)
+![PostGIS geometry preview on an interactive map](docs/images/postgis-map.png)
+![MongoDB document browser with a highlighted JSON document](docs/images/mongodb-browser.png)
 
 </details>
 
-## Install
+DBsaur is in early development. Use a database account with read-only permissions for browsing.
+Saving changes can permanently modify data. See the [security policy](SECURITY.md).
 
-Published packages are available from [GitHub Releases](https://github.com/stelios-vitzi/dbsaur/releases).
-The desktop application includes the interface and Rust API; end users do not
-need Node.js, Rust, or a separate server. Database servers remain external.
+## Develop from source
 
-| Platform                       | Release packages | Installation                                           |
-| ------------------------------ | ---------------- | ------------------------------------------------------ |
-| Windows x64                    | Setup `.exe`     | Choose current user (no elevation) or all users (UAC). |
-| Linux x64 (Debian/Ubuntu)       | `.deb`           | Install with `sudo apt install ./<filename>.deb`.      |
-| Linux x64 (Fedora/RPM)          | `.rpm`           | Install with `sudo dnf install ./<filename>.rpm`.      |
-| Linux x64 (portable)            | `.AppImage`      | Make the AppImage executable and run it.               |
-| macOS, Intel and Apple Silicon | Universal `.dmg` | Drag `DBsaur.app` into Applications.                   |
-
-Each release starts with five direct download links. Other assets are for
-automatic updates, checksums, and license notices; no ZIP extraction is needed.
-
-Linux release builds use Ubuntu 22.04 as their compatibility baseline and require
-WebKitGTK 4.1. macOS builds target macOS 11 or newer. Windows Authenticode and
-macOS Developer ID signing and notarization are opt-in for releases.
-Updater artifacts carry separate signatures for in-app verification. See
-[signing setup](docs/desktop-updates.md#operating-system-trust) and the
-[roadmap review](docs/robustness-review.md) for verification and remaining gaps.
-
-## Build and run from source
-
-Install Node.js 26 LTS (26.13+) and Rust 1.99.1 with rustfmt and Clippy, together
-with the [Tauri platform prerequisites](https://v2.tauri.app/start/prerequisites/):
-MSVC C++ build tools and WebView2 on Windows, GTK/WebKit development libraries on
-Linux, or Xcode command-line tools on macOS.
-
-From the repository root:
+Use Node.js 26.13+ and Rust 1.99.1 with rustfmt and Clippy. Install the
+[Tauri prerequisites for your platform](https://v2.tauri.app/start/prerequisites/),
+then run these commands from the repository root.
 
 ```sh
 npm --prefix frontend ci
@@ -87,49 +55,20 @@ cargo install tauri-cli --locked --version 2.12.4
 cargo xtask dev
 ```
 
-`dev` generates the desktop interface and opens a native window. Rerun it after
-frontend changes; this mode does not use a live frontend development server.
+Rerun `cargo xtask dev` after frontend changes. It builds the static Vue interface
+and opens the Tauri window with the embedded Rust API.
 
-| Command                          | Purpose                                                                     |
-| -------------------------------- | --------------------------------------------------------------------------- |
-| `cargo xtask build`              | Build native packages for the current OS.                                   |
-| `cargo xtask install`            | Build and open Windows setup, or install with sudo on Linux/macOS.          |
-| `cargo xtask install --no-build` | Install the newest existing native package.                                 |
-| `cargo xtask install --dry-run`  | Show the existing package and installation behavior without making changes. |
-| `cargo xtask frontend`           | Generate static desktop interface assets.                                   |
-| `cargo xtask check`              | Check desktop Rust code after generating frontend assets.                   |
+| Command               | Purpose                                                   |
+| --------------------- | --------------------------------------------------------- |
+| `cargo xtask check`   | Generate frontend assets and check the desktop Rust code. |
+| `cargo xtask build`   | Build native packages for the current platform.           |
+| `cargo xtask install` | Build and install locally or open Windows setup.          |
 
-`install` opens the scope chooser on Windows, uses APT or DNF on supported Linux
-distributions, and `/Applications/DBsaur.app` on macOS. Close a running DBsaur
-before upgrading. The dry run requires an existing release package.
+Native packages are written under `dist/release/bundle/`, or under
+`dist/<target>/release/bundle/` when building for an explicit target. Run
+`cargo xtask --help` for local installer options.
 
-Build output, including Cargo intermediates, stays under the root `dist/`:
-
-```text
-dist/release/                       Native executable
-dist/release/bundle/                Installers and app bundles
-dist/debug/                         Development builds
-dist/<target>/release/bundle/       Builds for an explicit target
-```
-
-To select a package format, use `cargo xtask build --bundles nsis` on Windows,
-`--bundles appimage` on Linux, or `--bundles dmg` on macOS. Other Tauri build
-arguments pass through unchanged.
-
-For a universal macOS build:
-
-```sh
-rustup target add aarch64-apple-darwin x86_64-apple-darwin
-cargo xtask build --target universal-apple-darwin --bundles app,dmg
-```
-
-Use `cargo xtask install --universal` to build and install that Mac bundle.
-
-The desktop application serves its bundled interface and protected local API on
-`127.0.0.1:34618`; both stop when the native application exits. Saved connections
-are configured automatically. Standalone browser/server deployment is not supported.
-
-## Tests and security checks
+## Tests and releases
 
 ```sh
 npm run typecheck
@@ -141,77 +80,18 @@ cargo install cargo-audit --locked --version 0.23.0
 npm run audit
 ```
 
-These checks cover TypeScript, formatting and Clippy, backend and frontend
-behavior, desktop access controls, package selection, release collection, and
-dependency vulnerabilities. Live database tests are opt-in and require an
-explicitly configured disposable database; see [integration tests](docs/user-guide.md#integration-tests).
+Live database integration tests require an explicitly configured disposable database.
+See the [integration test guide](docs/user-guide.md#integration-tests).
 
-The [desktop release workflow](.github/workflows/desktop-release.yml) requires
-successful Windows, Linux, and macOS builds and tests before publication. It also
-requires npm audits with no **high or critical** findings and RustSec audits with
-**no known vulnerabilities**, including unscored vulnerability advisories.
-Audit errors block publication. No advisory exceptions are configured.
+Pushing a version tag such as `v0.3.2` runs the [desktop release workflow](.github/workflows/desktop-release.yml).
+Publishing requires passing checks and native builds on Windows, Linux, and macOS.
+High or critical npm advisories, any RustSec vulnerability across the three Cargo
+lockfiles, or an audit error block publication. [Release signing setup](docs/desktop-updates.md#maintainer-setup)
 
-Dependency audits run as part of the version-tag workflow. Dependency updates are manual.
-See [SECURITY.md](SECURITY.md) for current findings and vulnerability reporting.
-
-## Releases and versioning
-
-Pushing a version tag such as `0.2.0` or `v0.2.0` starts the **Desktop build and
-release** workflow. It runs CI checks, including the frontend build and disposable
-database integration, alongside the dependency audits and signing preflight.
-Publication requires all checks and native builds to pass. The **Release outcome**
-summary reports the result of each gate.
-Packages include license notices and platform-specific SHA-256 manifests.
-
-CI caches Rust dependencies and installed build tools per platform. The first
-build after a cache miss remains slow; later builds reuse compiled dependencies.
-macOS universal releases still compile for both Apple Silicon and Intel.
-The Linux job produces DEB, RPM, and AppImage packages in the same build.
-
-Signed desktop releases check for updates at launch and offer **Install and
-restart** in the app. See [desktop updates](docs/desktop-updates.md) for supported
-installation formats and the required GitHub signing-key setup.
-
-The source version is maintained in the backend and desktop Cargo manifests and
-`src-tauri/tauri.conf.json`. Ask the user to approve a version bump for every change
-set, including documentation updates; never change it without their answer.
-
-CI currently derives installer versions as `<source-major>.<source-minor>.<run-number>`
-and publishes releases under the pushed version tag. This generated build version is
-separate from the approved source version. See [AGENTS.md](AGENTS.md) for project
-instructions and [CONTRIBUTING.md](CONTRIBUTING.md) for contribution guidance.
-
-## Project structure
-
-```text
-frontend/       Vue 3, Vite, TypeScript, bundled desktop interface
-backend/        Rust/Axum API, database adapters, sessions, encrypted vault
-src-tauri/      Native desktop host, local API protection, installer configuration
-xtask/          Desktop build and installation commands
-scripts/        Linux build prerequisites and desktop release helpers
-docs/           Detailed usage, operations, and architecture reviews
-```
-
-See the [refactoring review](docs/refactoring-review.md) for current architecture findings
-and the plain Vue migration scope.
-
-## Security and data handling
-
-DBsaur is a trusted, single-user tool. Database permissions remain the security
-boundary; use a SELECT-only account for browsing. New remote connections default
-to verified TLS and read-only mode; explicit loopback hosts use development defaults.
-The embedded API is bound to loopback and protected by a desktop session token.
-Remote or shared deployment is not supported.
-
-Credentials remain in session memory unless saved to the encrypted vault. Protect
-the vault and its key; export a passphrase-encrypted backup for recovery.
-Saved SQL uses local interface storage and should not contain secrets. Optional
-PostGIS backgrounds are disabled by default. Opt-in custom tile servers receive
-the client IP and viewed area; database records and geometry values are not sent.
+The approved source version is tracked separately from the installer version generated
+by CI as `<source-major>.<source-minor>.<run-number>`. See the [project instructions](AGENTS.md#version-changes)
+for version changes.
 
 ## License
 
-DBsaur is available under the [MIT license](LICENSE). Dependencies and bundled
-assets retain their own licenses; see [third-party notices](THIRD_PARTY_NOTICES.md).
-The software is provided as is, without a guaranteed support or release schedule.
+[MIT](LICENSE) · [Third-party notices](THIRD_PARTY_NOTICES.md)
