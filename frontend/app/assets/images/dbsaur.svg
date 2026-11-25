@@ -4,17 +4,18 @@
       <path d="M200,200 H816 L526,490 V785 L681,1000 H200 Z"/>
     </clipPath>
   </defs>
-  <g transform="matrix(0.767616 0 0 0.767616 -224.144 -235.658)">
+  <rect width="512" height="512" rx="64" fill="#30485f"/>
+  <g transform="translate(20.48 20.48) scale(0.92) matrix(0.767616 0 0 0.767616 -224.144 -235.658)">
     <g clip-path="url(#dbsaur-cut)">
       <path d="M300,452 V533.5 A205,75.5 0 0 0 710,533.5 V452 Z" fill="#d8e5f0"/>
       <ellipse cx="505" cy="452" rx="205" ry="73" fill="#eaf4fc"/>
-      <path d="M300,579 A205,64 0 0 0 710,579 V675.5 A205,75.5 0 0 1 300,675.5 Z" fill="#7bcff2"/>
+      <path d="M300,579 A205,64 0 0 0 710,579 V675.5 A205,75.5 0 0 1 300,675.5 Z" fill="#6fc2e8"/>
       <path d="M300,722 A205,64 0 0 0 710,722 V826.5 A205,75.5 0 0 1 300,826.5 Z" fill="#c4d6e6"/>
     </g>
-    <path d="M671,384 L565,488 L708,581 L706,558 L745,514 Z" fill="#92ddf6"/>
-    <path d="M889,401 L725,563 L729,594 L769,603 Z" fill="#cfeefb"/>
-    <path d="M939,439 L845,509 L801,587 L818,598 Z" fill="#cfeefb"/>
-    <path d="M951,611 L882,661 L887,674 L922,694 Z" fill="#cfeefb"/>
+    <path d="M671,384 L565,488 L708,581 L706,558 L745,514 Z" fill="#83cfea"/>
+    <path d="M889,401 L725,563 L729,594 L769,603 Z" fill="#bfe2f2"/>
+    <path d="M939,439 L845,509 L801,587 L818,598 Z" fill="#bfe2f2"/>
+    <path d="M951,611 L882,661 L887,674 L922,694 Z" fill="#bfe2f2"/>
     <path d="M555,690 L555,789 L633,887 L686,832 L645,789 L655,737 L607,750 Z" fill="#66bee6"/>
     <path d="M675,787 L704,817 L811,826 L842,797 L745,760 L722,765 Z" fill="#66bee6"/>
     <path d="M924,722 L870,774 L921,820 L940,765 Z" fill="#66bee6"/>
