@@ -12,8 +12,8 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  database-integration:
-    uses: ./.github/workflows/database-integration.yml
+  ci:
+    uses: ./.github/workflows/ci.yml
 
   preflight:
     name: Validate release signing setup
@@ -254,7 +254,7 @@ jobs:
       - run: cargo audit --file "${{ matrix.lockfile }}"
 
   release:
-    needs: [preflight, build, audit-npm, audit-rust, database-integration]
+    needs: [preflight, build, audit-npm, audit-rust, ci]
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -285,7 +285,7 @@ jobs:
 
   summary:
     name: Release outcome
-    needs: [preflight, build, audit-npm, audit-rust, database-integration, release]
+    needs: [preflight, build, audit-npm, audit-rust, ci, release]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -296,7 +296,7 @@ jobs:
           BUILD_RESULT: ${{ needs.build.result }}
           NPM_RESULT: ${{ needs.audit-npm.result }}
           RUST_RESULT: ${{ needs.audit-rust.result }}
-          INTEGRATION_RESULT: ${{ needs.database-integration.result }}
+          CI_RESULT: ${{ needs.ci.result }}
           RELEASE_RESULT: ${{ needs.release.result }}
         run: |
           {
@@ -305,7 +305,7 @@ jobs:
             echo "Native builds: $BUILD_RESULT"
             echo "npm audit: $NPM_RESULT"
             echo "RustSec audits (all three lockfiles): $RUST_RESULT"
-            echo "Disposable database integration: $INTEGRATION_RESULT"
+            echo "CI checks and disposable database integration: $CI_RESULT"
             echo "Publication: $RELEASE_RESULT"
             if [[ "$RELEASE_RESULT" == success ]]; then
               echo "[Published releases](https://github.com/$GITHUB_REPOSITORY/releases)"

@@ -108,9 +108,9 @@ Native builds and publication run only when a version tag matching `<major>.<min
 or `v<major>.<minor>.<patch>` is pushed, for example `git tag 0.2.0` followed by
 `git push origin 0.2.0`. The tagged commit must contain this workflow; an already
 pushed tag does not start a new run when later branch commits change the workflow.
-The GitHub Release uses that existing tag. Branch pushes, pull requests, and manual
-dispatch do not trigger the desktop release workflow. CI checks and security audits
-keep their existing triggers; the CI frontend build runs only on version tags.
+The GitHub Release uses that existing tag. The tag push also runs dependency
+audits and calls the CI workflow for frontend checks and disposable database
+integration. Each of these checks must pass before publication.
 Installer versions remain `<source-major>.<source-minor>.<run-number>`.
 
 Install the first release containing this updater manually. Older DBsaur

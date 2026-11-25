@@ -29,9 +29,9 @@ maintainer identities is still required. Local builds remain unsigned/ad-hoc;
 SmartScreen reputation warnings may persist for signed Windows packages. See
 [operating-system trust](docs/desktop-updates.md#operating-system-trust).
 
-Online audits were rerun on 17 November 2026 after the robustness changes: npm reports zero
-findings. All three Cargo lockfiles have no vulnerability findings; the desktop
-glib and proc-macro-error warnings remain visible. Native build and signed update
+Online audits on 25 November 2026 found zero npm vulnerabilities and zero RustSec
+vulnerabilities across all three Cargo lockfiles. The desktop audit still reports
+warnings for chrono, glib, and proc-macro-error. Native build and signed update
 verification are separate gates.
 
 ## Supported versions and threat model
@@ -92,14 +92,19 @@ audits block high/critical findings. RustSec audits cover backend, desktop, and
 xtask lockfiles and block every vulnerability, including unscored ones. Audit
 errors also block publication. No advisory exceptions are configured.
 
-Current live audit results (17 November 2026, after the robustness changes):
+Current live audit results (25 November 2026):
 
 | Check | Result |
 | --- | --- |
 | npm | 0 findings at every severity |
 | backend Cargo lockfile | No vulnerabilities |
-| desktop Cargo lockfile | No vulnerabilities; glib unsoundness and proc-macro-error maintenance warnings remain visible |
+| desktop Cargo lockfile | No vulnerabilities; glib unsoundness and chrono and proc-macro-error maintenance warnings remain visible |
 | xtask Cargo lockfile | No vulnerabilities |
+
+The backend and desktop lockfiles use url 2.5.9 for
+[RUSTSEC-2026-0592](https://rustsec.org/advisories/RUSTSEC-2026-0592.html).
+The desktop lockfile uses cookie 0.18.3 for
+[RUSTSEC-2026-0594](https://rustsec.org/advisories/RUSTSEC-2026-0594.html).
 
 The earlier RUSTSEC-2026-0459 publication blocker is resolved by using rusqlite
 0.42.0 with bundled libsqlite3-sys 0.40.0 for the encrypted connection vault.
@@ -114,9 +119,9 @@ were removed because those dependencies are no longer installed.
 
 Passing audits alone does not publish a release: all native platform build gates
 must also pass. Version 0.1.3 removes standalone web hosting, container images,
-and container CI jobs. The daily/PR/push npm and RustSec audits remain enabled
-and still audit all three Cargo lockfiles. Historical container scan results
-below describe the retired deployment and are not current desktop scan results.
+and container CI jobs. The desktop release workflow audits npm and all three
+Cargo lockfiles on version-tag pushes. Historical container scan results below
+describe the retired deployment.
 
 ## Dependency review — 17 October 2026
 
@@ -148,8 +153,8 @@ The container-image results above are historical. Dockerfiles, Compose files,
 container deployment helpers, and Trivy image jobs were removed when DBsaur
 became desktop-only. They no longer describe a supported deployment.
 
-CI audits the live npm registry and RustSec database on pushes, pull requests,
-manual runs, and daily. To reproduce all current package audits:
+The release workflow audits the live npm registry and RustSec database on
+version-tag pushes. To reproduce the package audits locally:
 
 ```sh
 cargo install cargo-audit --locked --version 0.23.0

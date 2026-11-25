@@ -152,19 +152,16 @@ requires npm audits with no **high or critical** findings and RustSec audits wit
 **no known vulnerabilities**, including unscored vulnerability advisories.
 Audit errors block publication. No advisory exceptions are configured.
 
-The [security workflow](.github/workflows/security.yml) repeats dependency audits
-on pushes, pull requests, manual runs, and a daily schedule.
-Dependency updates are manual; these checks do not create dependency-update commits.
+Dependency audits run as part of the version-tag workflow. Dependency updates are manual.
 See [SECURITY.md](SECURITY.md) for current findings and vulnerability reporting.
 
 ## Releases and versioning
 
-The **Desktop build and release** workflow publishes a combined GitHub Release
-after all native builds and dependency audits pass, only when a version tag such
-as `0.2.0` or `v0.2.0` is pushed. Branch pushes, pull requests, and manual runs do not build
-packages. Ordinary CI checks and security audits keep their existing triggers;
-the CI frontend build runs only on version tags. Its **Release outcome** summary
-reports blocking gates. A successful ordinary **CI** run alone does not publish a release.
+Pushing a version tag such as `0.2.0` or `v0.2.0` starts the **Desktop build and
+release** workflow. It runs CI checks, including the frontend build and disposable
+database integration, alongside the dependency audits and signing preflight.
+Publication requires all checks and native builds to pass. The **Release outcome**
+summary reports the result of each gate.
 Packages include license notices and platform-specific SHA-256 manifests.
 
 CI caches Rust dependencies and installed build tools per platform. The first
