@@ -25,11 +25,12 @@ does not verify UAC or installer lifecycle behavior.
 
 ## Icons
 
-The shared vector source is `../icons/source.svg`. Regenerate using the pinned
-CLI, then retain only the desktop assets used by `tauri.conf.json`:
+The shared vector source is [dbsaur.svg](../../frontend/app/assets/images/dbsaur.svg).
+Regenerate using the pinned CLI, then retain only the desktop assets used by
+`tauri.conf.json`:
 
 ```sh
-cargo tauri icon src-tauri/icons/source.svg --output dist/icon-generation
+cargo tauri icon frontend/app/assets/images/dbsaur.svg --output dist/icon-generation
 ```
 
 Copy `icon.png`, `icon.ico`, `icon.icns`, `32x32.png`, `128x128.png`, and

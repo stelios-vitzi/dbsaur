@@ -11,7 +11,10 @@ onMounted(() => dialog.value?.showModal())
 <template>
   <dialog ref="dialog" class="about-dialog" aria-labelledby="about-title" @close="$emit('close')">
     <div class="about-heading">
-      <h2 id="about-title">About DBsaur</h2>
+      <h2 id="about-title">
+        <img src="../assets/images/dbsaur.svg" width="28" height="28" alt="" />
+        About DBsaur
+      </h2>
       <button class="icon-button" aria-label="Close About" @click="dialog?.close()">
         <AppIcon name="close" :size="16" />
       </button>
@@ -49,6 +52,11 @@ onMounted(() => dialog.value?.showModal())
 }
 .about-dialog > p {
   color: var(--secondary);
+}
+.about-heading h2 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 .about-updates {
   margin-block: 24px;

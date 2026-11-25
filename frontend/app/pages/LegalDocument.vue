@@ -1,7 +1,5 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import AppIcon from '../components/AppIcon.vue'
-
 import { RouterLink } from 'vue-router'
 import { legalDocuments, privacyConfig } from '../utils/privacy'
 const props = defineProps<{ documentKey: 'privacy' | 'terms' }>()
@@ -12,10 +10,13 @@ const document = computed(() => legalDocuments[props.documentKey])
   <div class="legal-page">
     <header class="app-header">
       <RouterLink to="/" class="brand" aria-label="DBsaur home"
-        ><span class="brand-icon"><AppIcon name="database" :size="20" /></span>DB<span
-          class="brand-db"
-          >saur</span
-        ></RouterLink
+        ><img
+          class="brand-icon"
+          src="../assets/images/dbsaur.svg"
+          width="24"
+          height="24"
+          alt=""
+        />DB<span class="brand-db">saur</span></RouterLink
       >
       <RouterLink to="/" class="button secondary small">Back to DBsaur</RouterLink>
     </header>

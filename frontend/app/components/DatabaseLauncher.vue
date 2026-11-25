@@ -20,7 +20,9 @@ const emit = defineEmits<{
   <main class="launcher-main">
     <section class="launcher-content" aria-labelledby="launcher-title">
       <div class="launcher-heading">
-        <span class="launcher-mark"><AppIcon name="database" :size="22" /></span>
+        <span class="launcher-mark">
+          <img src="../assets/images/dbsaur.svg" width="36" height="36" alt="" />
+        </span>
         <div>
           <h1 id="launcher-title">Your databases</h1>
           <p>Choose a saved connection or add a database.</p>
