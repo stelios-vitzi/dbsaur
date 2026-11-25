@@ -120,24 +120,28 @@ export function validateSigningConfiguration(env) {
   const missing = ['TAURI_UPDATER_PUBLIC_KEY', 'TAURI_SIGNING_PRIVATE_KEY'].filter(
     (name) => !env[name]?.trim(),
   )
-  if (env.OS_CODE_SIGNING === 'true')
-    missing.push(
-      ...[
+  for (const [flag, names] of [
+    [
+      'MACOS_CODE_SIGNING',
+      [
         'APPLE_CERTIFICATE',
         'APPLE_CERTIFICATE_PASSWORD',
         'APPLE_SIGNING_IDENTITY',
         'APPLE_ID',
         'APPLE_PASSWORD',
         'APPLE_TEAM_ID',
-        'WINDOWS_CERTIFICATE',
-        'WINDOWS_CERTIFICATE_PASSWORD',
-        'WINDOWS_TIMESTAMP_URL',
-      ].filter((name) => !env[name]?.trim()),
-    )
+      ],
+    ],
+    [
+      'WINDOWS_CODE_SIGNING',
+      ['WINDOWS_CERTIFICATE', 'WINDOWS_CERTIFICATE_PASSWORD', 'WINDOWS_TIMESTAMP_URL'],
+    ],
+  ]) {
+    if (env[flag] === 'true') missing.push(...names.filter((name) => !env[name]?.trim()))
+  }
   if (missing.length)
     throw new Error(
       `Missing GitHub Actions signing configuration: ${missing.join(', ')}. ` +
-        'Set the public key as a repository variable and the private key as a repository secret. ' +
         'See docs/desktop-updates.md. No release can be published until signing is configured.',
     )
 }
@@ -164,15 +168,34 @@ export function updateManifest({ directory, version, repository, tag }) {
   return { version, platforms }
 }
 
-export function releaseNotes({ directory, repository, tag, version }) {
+export function releaseNotes({
+  directory,
+  repository,
+  tag,
+  version,
+  windowsCodeSigning,
+  macosCodeSigning,
+}) {
   // Validate the release location and signed updater assets before linking downloads.
   updateManifest({ directory, repository, tag, version })
   const downloads = [
-    ['Windows x64', '-setup.exe', 'Run the setup installer.'],
+    [
+      'Windows x64',
+      '-setup.exe',
+      windowsCodeSigning
+        ? 'Run the Authenticode-signed setup installer.'
+        : 'Run the unsigned setup installer. Windows may show a SmartScreen warning.',
+    ],
     ['Linux x64 (Debian/Ubuntu)', '.deb', 'Install with `sudo apt install ./<filename>.deb`.'],
     ['Linux x64 (Fedora/RPM)', '.rpm', 'Install with `sudo dnf install ./<filename>.rpm`.'],
     ['Linux x64 (portable)', '.AppImage', 'Make the AppImage executable, then run it.'],
-    ['macOS (Intel and Apple Silicon)', '.dmg', 'Open the DMG and drag DBsaur into Applications.'],
+    [
+      'macOS (Intel and Apple Silicon)',
+      '.dmg',
+      macosCodeSigning
+        ? 'Open the DMG and drag the signed and notarized app into Applications.'
+        : 'Open the DMG and drag DBsaur into Applications. This build is ad-hoc signed and may require approval in Privacy & Security.',
+    ],
   ].map(([platform, extension, instructions]) => {
     const name = basename(selectPackage(directory, extension))
     const url = `https://github.com/${repository}/releases/download/${tag}/${encodeURIComponent(name)}`
@@ -259,6 +282,8 @@ if (process.argv[1] && resolve(process.argv[1]) === resolve(import.meta.filename
       version: process.env.RELEASE_VERSION,
       repository: process.env.GITHUB_REPOSITORY,
       tag: process.env.RELEASE_TAG,
+      windowsCodeSigning: process.env.WINDOWS_CODE_SIGNING === 'true',
+      macosCodeSigning: process.env.MACOS_CODE_SIGNING === 'true',
     }
     writeFileSync('dist/latest.json', JSON.stringify(updateManifest(options), null, 2) + '\n')
     mkdirSync('.artifacts', { recursive: true })

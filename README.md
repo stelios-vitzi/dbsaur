@@ -66,8 +66,8 @@ Each release starts with five direct download links. Other assets are for
 automatic updates, checksums, and license notices; no ZIP extraction is needed.
 
 Linux release builds use Ubuntu 22.04 as their compatibility baseline and require
-WebKitGTK 4.1. macOS builds target macOS 11 or newer. Release workflows require
-OS signing and notarization credentials; local builds remain unsigned/ad-hoc.
+WebKitGTK 4.1. macOS builds target macOS 11 or newer. Windows Authenticode and
+macOS Developer ID signing and notarization are opt-in for releases.
 Updater artifacts carry separate signatures for in-app verification. See
 [signing setup](docs/desktop-updates.md#operating-system-trust) and the
 [roadmap review](docs/robustness-review.md) for verification and remaining gaps.

@@ -7,6 +7,10 @@ on:
 permissions:
   contents: read
 
+env:
+  MACOS_CODE_SIGNING: ${{ vars.MACOS_CODE_SIGNING == 'true' }}
+  WINDOWS_CODE_SIGNING: ${{ vars.WINDOWS_CODE_SIGNING == 'true' }}
+
 concurrency:
   group: desktop-${{ github.ref }}
   cancel-in-progress: false
@@ -31,7 +35,6 @@ jobs:
           RELEASE_SIGNED: ${{ github.event_name == 'push' && startsWith(github.ref, 'refs/tags/') }}
           TAURI_UPDATER_PUBLIC_KEY: ${{ vars.TAURI_UPDATER_PUBLIC_KEY }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          OS_CODE_SIGNING: 'true'
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
           APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
@@ -118,7 +121,7 @@ jobs:
       - run: npm run lint
       - run: npm test
       - name: Import Windows signing certificate
-        if: runner.os == 'Windows'
+        if: runner.os == 'Windows' && env.WINDOWS_CODE_SIGNING == 'true'
         shell: pwsh
         env:
           WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
@@ -136,7 +139,7 @@ jobs:
             if (Test-Path -LiteralPath $certificatePath) { Remove-Item -LiteralPath $certificatePath -Force }
           }
       - name: Import Apple Developer ID certificate
-        if: runner.os == 'macOS'
+        if: runner.os == 'macOS' && env.MACOS_CODE_SIGNING == 'true'
         env:
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
@@ -158,7 +161,7 @@ jobs:
         id: version
         env:
           TAURI_UPDATER_PUBLIC_KEY: ${{ vars.TAURI_UPDATER_PUBLIC_KEY }}
-          APPLE_SIGNING_IDENTITY: ${{ runner.os == 'macOS' && secrets.APPLE_SIGNING_IDENTITY || '' }}
+          APPLE_SIGNING_IDENTITY: ${{ runner.os == 'macOS' && env.MACOS_CODE_SIGNING == 'true' && secrets.APPLE_SIGNING_IDENTITY || '' }}
           WINDOWS_TIMESTAMP_URL: ${{ vars.WINDOWS_TIMESTAMP_URL }}
         run: node scripts/desktop-release.mjs version
       - name: Build native packages
@@ -167,16 +170,16 @@ jobs:
           NO_STRIP: 'true'
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-          APPLE_SIGNING_IDENTITY: ${{ runner.os == 'macOS' && secrets.APPLE_SIGNING_IDENTITY || '' }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_ID: ${{ runner.os == 'macOS' && env.MACOS_CODE_SIGNING == 'true' && secrets.APPLE_ID || '' }}
+          APPLE_PASSWORD: ${{ runner.os == 'macOS' && env.MACOS_CODE_SIGNING == 'true' && secrets.APPLE_PASSWORD || '' }}
+          APPLE_TEAM_ID: ${{ runner.os == 'macOS' && env.MACOS_CODE_SIGNING == 'true' && secrets.APPLE_TEAM_ID || '' }}
         run: |
+          if [[ "$MACOS_CODE_SIGNING" != true ]]; then unset APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID; fi
           args=(--ci --bundles "$RELEASE_BUNDLES" --config .artifacts/desktop-release.json)
           if [[ -n "$RELEASE_TARGET" ]]; then args+=(--target "$RELEASE_TARGET"); fi
           cargo xtask build "${args[@]}" -- --locked
       - name: Verify Windows OS signatures
-        if: runner.os == 'Windows'
+        if: runner.os == 'Windows' && env.WINDOWS_CODE_SIGNING == 'true'
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
@@ -186,7 +189,7 @@ jobs:
             if ((Get-AuthenticodeSignature -LiteralPath $file.FullName).Status -ne 'Valid') { throw 'Authenticode verification failed' }
           }
       - name: Verify macOS signing and notarization
-        if: runner.os == 'macOS'
+        if: runner.os == 'macOS' && env.MACOS_CODE_SIGNING == 'true'
         run: |
           set -euo pipefail
           app="dist/$RELEASE_TARGET/release/bundle/macos/DBsaur.app"
@@ -194,7 +197,7 @@ jobs:
           spctl --assess --type execute "$app"
           xcrun stapler validate "$app"
       - name: Remove temporary Apple keychain
-        if: always() && runner.os == 'macOS'
+        if: always() && runner.os == 'macOS' && env.MACOS_CODE_SIGNING == 'true'
         run: |
           if [[ -f "$RUNNER_TEMP/dbsaur-signing.keychain-db" ]]; then
             security delete-keychain "$RUNNER_TEMP/dbsaur-signing.keychain-db"

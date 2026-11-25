@@ -18,15 +18,14 @@ Release builds check GitHub for updates on launch. Updates require explicit
 installation confirmation and a valid Tauri signature before installation.
 The release workflow uses an Actions private-key secret and embeds the public
 key in the application. Keep the key stable and backed up; see
-[desktop update setup](docs/desktop-updates.md). Unsigned local builds do not
-check for updates. GitHub receives the client's IP address during update checks
+[desktop update setup](docs/desktop-updates.md). Local builds skip update checks
+by default. GitHub receives the client's IP address during update checks
 and downloads; database contents and credentials are not included.
 
-Tauri updater signatures are separate from OS code signing. Release workflows
-now require Authenticode and Developer ID signing/notarization configuration,
-and verify OS signatures before collecting assets. Hosted validation with real
-maintainer identities is still required. Local builds remain unsigned/ad-hoc;
-SmartScreen reputation warnings may persist for signed Windows packages. See
+Releases require Tauri updater signatures. Authenticode and Developer ID signing
+and notarization are independent opt-ins. The workflow verifies OS signatures
+before collecting assets when the corresponding opt-in is enabled. Hosted
+validation with real maintainer identities is still required. See
 [operating-system trust](docs/desktop-updates.md#operating-system-trust).
 
 Online audits on 25 November 2026 found zero npm vulnerabilities and zero RustSec

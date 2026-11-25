@@ -33,25 +33,33 @@ alternative formats with `cargo xtask build --bundles <format>`.
 
 ### Operating-system trust
 
-Updater signatures verify updates inside DBsaur; they do not establish a verified
-Windows publisher or satisfy macOS Gatekeeper. Release preflight now requires
-OS signing setup; local builds keep their existing unsigned/ad-hoc behavior.
+Updater signatures verify updates inside DBsaur. Authenticode establishes a
+Windows publisher identity, and Developer ID signing and notarization establish
+trust for macOS Gatekeeper. By default, releases build unsigned Windows installers
+and ad-hoc signed macOS apps. Windows can show a SmartScreen warning, and macOS
+may require approval in Privacy & Security. The release download notes report
+the signing mode for both platforms.
 
-Configure these Actions secrets before releasing:
+Set the repository variable `MACOS_CODE_SIGNING` to `true` to opt in to Developer
+ID signing and notarization. Configure these Actions secrets:
 
 - `APPLE_CERTIFICATE`: base64-encoded Developer ID Application `.p12`.
 - `APPLE_CERTIFICATE_PASSWORD`: its export password.
 - `APPLE_SIGNING_IDENTITY`: the full Developer ID Application identity.
 - `APPLE_ID`, `APPLE_PASSWORD` (an app-specific password), and `APPLE_TEAM_ID`
   for notarization.
+
+Set the repository variable `WINDOWS_CODE_SIGNING` to `true` to opt in to
+Authenticode signing. Configure these Actions secrets:
+
 - `WINDOWS_CERTIFICATE`: base64-encoded signing `.pfx`, with its private key.
 - `WINDOWS_CERTIFICATE_PASSWORD`: its export password.
 
-Set repository variable `WINDOWS_TIMESTAMP_URL` to the timestamp endpoint
+For Windows signing, set repository variable `WINDOWS_TIMESTAMP_URL` to the timestamp endpoint
 provided by your certificate authority. Tauri signs the application and NSIS
 installer during bundling, before updater signatures and checksums are generated.
-The workflow verifies both Windows signatures, and runs codesign, Gatekeeper,
-and stapler validation for the macOS app. Credentials must support unattended
+The Windows opt-in verifies both Windows signatures. The macOS opt-in runs
+codesign, Gatekeeper, and stapler validation. Credentials must support unattended
 signing; a hardware-backed or hosted signing service may require a different
 Windows signing command. These paths need hosted validation with real identities.
 See Tauri's [macOS signing](https://v2.tauri.app/distribute/sign/macos/) and

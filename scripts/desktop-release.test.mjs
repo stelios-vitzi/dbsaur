@@ -67,22 +67,44 @@ test('release preflight requires both signing keys without exposing their conten
   }
 })
 
-test('OS signing preflight blocks incomplete credentials without printing secrets', () => {
-  assert.throws(
-    () =>
-      validateSigningConfiguration({
-        RELEASE_SIGNED: 'true',
-        OS_CODE_SIGNING: 'true',
-        TAURI_UPDATER_PUBLIC_KEY: 'public',
-        TAURI_SIGNING_PRIVATE_KEY: 'private-do-not-print',
-      }),
-    (error) => {
-      assert.ok(error.message.includes('APPLE_SIGNING_IDENTITY'))
-      assert.ok(error.message.includes('WINDOWS_CERTIFICATE'))
-      assert.ok(!error.message.includes('private-do-not-print'))
-      return true
-    },
-  )
+test('OS signing preflight requires credentials only for opted-in platforms', () => {
+  const updater = {
+    RELEASE_SIGNED: 'true',
+    TAURI_UPDATER_PUBLIC_KEY: 'public',
+    TAURI_SIGNING_PRIVATE_KEY: 'private-do-not-print',
+  }
+  const macos = {
+    MACOS_CODE_SIGNING: 'true',
+    APPLE_CERTIFICATE: 'certificate',
+    APPLE_CERTIFICATE_PASSWORD: 'password',
+    APPLE_SIGNING_IDENTITY: 'identity',
+    APPLE_ID: 'account',
+    APPLE_PASSWORD: 'app-password',
+    APPLE_TEAM_ID: 'team',
+  }
+  const windows = {
+    WINDOWS_CODE_SIGNING: 'true',
+    WINDOWS_CERTIFICATE: 'certificate',
+    WINDOWS_CERTIFICATE_PASSWORD: 'password',
+    WINDOWS_TIMESTAMP_URL: 'https://example.com',
+  }
+  for (const settings of [macos, windows, { ...macos, ...windows }]) {
+    assert.doesNotThrow(() => validateSigningConfiguration({ ...updater, ...settings }))
+  }
+  for (const [flag, required, unrelated] of [
+    ['MACOS_CODE_SIGNING', 'APPLE_SIGNING_IDENTITY', 'WINDOWS_CERTIFICATE'],
+    ['WINDOWS_CODE_SIGNING', 'WINDOWS_CERTIFICATE', 'APPLE_SIGNING_IDENTITY'],
+  ]) {
+    assert.throws(
+      () => validateSigningConfiguration({ ...updater, [flag]: 'true' }),
+      (error) => {
+        assert.ok(error.message.includes(required))
+        assert.ok(!error.message.includes(unrelated))
+        assert.ok(!error.message.includes('private-do-not-print'))
+        return true
+      },
+    )
+  }
 })
 
 test('version numbers remain valid for Windows and consistent across platforms', () => {
@@ -190,6 +212,15 @@ test('updater manifest requires all signed platforms and maps both macOS archite
     ])
       assert.ok(notes.includes(`https://github.com/owner/repo/releases/download/main-42-1/${name}`))
     assert.ok(notes.includes('automatic updates'))
+    assert.ok(notes.includes('unsigned setup installer'))
+    assert.ok(notes.includes('ad-hoc signed'))
+    const signedNotes = releaseNotes({
+      ...options,
+      windowsCodeSigning: true,
+      macosCodeSigning: true,
+    })
+    assert.ok(signedNotes.includes('Authenticode-signed setup installer'))
+    assert.ok(signedNotes.includes('signed and notarized app'))
     rmSync(join(directory, 'DBsaur universal.dmg'))
     assert.throws(() => releaseNotes(options), /Expected one .dmg/)
     writeFileSync(join(directory, 'DBsaur.AppImage.sig'), '')
