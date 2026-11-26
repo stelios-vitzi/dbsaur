@@ -824,17 +824,23 @@ async function cellSaved() {
               />
             </template>
             <div v-else class="content-empty">
-              <AppIcon name="table" :size="32" />
-              <h2>{{ error ? 'Unable to load this table' : 'Ready when you are' }}</h2>
-              <p>
-                {{
-                  error
-                    ? 'Check your connection and database permissions, then try again.'
-                    : workspaceTabs.queryActive.value
-                      ? 'Run this query to see its results.'
-                      : 'Select a table from the explorer to open a tab.'
-                }}
-              </p>
+              <template v-if="error && activeQuery">
+                <h2>Query failed</h2>
+                <p class="error-message" role="alert">{{ error }}</p>
+              </template>
+              <template v-else>
+                <AppIcon name="table" :size="32" />
+                <h2>{{ error ? 'Unable to load this table' : 'Ready when you are' }}</h2>
+                <p>
+                  {{
+                    error
+                      ? 'Check your connection and database permissions, then try again.'
+                      : workspaceTabs.queryActive.value
+                        ? 'Run this query to see its results.'
+                        : 'Select a table from the explorer to open a tab.'
+                  }}
+                </p>
+              </template>
               <button
                 v-if="error"
                 class="button secondary small"

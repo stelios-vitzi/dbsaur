@@ -18,6 +18,47 @@ impl From<rusqlite::Error> for AppError {
     }
 }
 
+pub(super) fn query_error(error: rusqlite::Error, sample: bool) -> AppError {
+    use rusqlite::{Error, ErrorCode};
+    if error.sqlite_error_code() == Some(ErrorCode::OperationInterrupted) {
+        return AppError(
+            ErrorKind::Timeout,
+            "Database request timed out. Try a smaller query.",
+        );
+    }
+    let message = match &error {
+        Error::SqliteFailure(_, Some(message)) | Error::SqlInputError { msg: message, .. } => {
+            message.as_str()
+        }
+        _ => "",
+    };
+    invalid(if message.starts_with("no such table:") {
+        if sample {
+            "Unknown sample table. Query public.customers, public.orders, or public.products."
+        } else {
+            "A table or view does not exist. Check the table name and schema."
+        }
+    } else if message.starts_with("no such column:") {
+        "A column does not exist or is out of scope. Check column names and aliases."
+    } else if message.starts_with("ambiguous column name:") {
+        "A column reference is ambiguous. Qualify it with a table name or alias."
+    } else if message.starts_with("no such function:") {
+        if sample {
+            "This function is not available in the sample workspace. Connect PostgreSQL for full SQL."
+        } else {
+            "A function used by the query does not exist."
+        }
+    } else if message.starts_with("wrong number of arguments to function") {
+        "A function in the query received the wrong number of arguments."
+    } else if message.starts_with("near \"") || message == "incomplete input" {
+        "Invalid SQL syntax in the query."
+    } else if matches!(error, Error::InvalidParameterCount(..)) {
+        "The query contains an unresolved parameter. Supply a value in the SQL."
+    } else {
+        return error.into();
+    })
+}
+
 fn quote(name: &str) -> String {
     format!("\"{}\"", name.replace('"', "\"\""))
 }
@@ -185,7 +226,9 @@ fn page(
     size: u32,
     metadata: Option<Vec<Column>>,
 ) -> AppResult<TablePage> {
-    let mut statement = connection.prepare(sql)?;
+    let mut statement = connection
+        .prepare(sql)
+        .map_err(|error| query_error(error, false))?;
     if !statement.readonly() {
         return Err(invalid("Only read-only queries are supported here."));
     }
@@ -207,9 +250,11 @@ fn page(
             })
         })
         .collect::<AppResult<Vec<_>>>()?;
-    let mut cursor = statement.query([])?;
+    let mut cursor = statement
+        .query([])
+        .map_err(|error| query_error(error, false))?;
     let mut rows = Vec::new();
-    while let Some(row) = cursor.next()? {
+    while let Some(row) = cursor.next().map_err(|error| query_error(error, false))? {
         let mut record = Map::new();
         for (i, column) in columns.iter().enumerate() {
             record.insert(column.name.clone(), value(row.get_ref(i)?)?);
@@ -547,7 +592,7 @@ impl DatabaseAdapter for SqliteAdapter {
         run(input, false, move |c| {
             // SQLite auto-renames duplicate names in subqueries; validate the
             // original projection before adding bounded pagination.
-            let statement = c.prepare(&sql)?;
+            let statement = c.prepare(&sql).map_err(|error| query_error(error, false))?;
             let mut names = std::collections::HashSet::new();
             if statement
                 .column_names()

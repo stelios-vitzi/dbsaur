@@ -14,6 +14,37 @@ fn driver_error(_: tiberius::error::Error) -> AppError {
         "SQL Server request failed. Check connection details, TLS, permissions, SQL syntax, and unique column aliases.",
     )
 }
+
+fn query_error_number(number: u32) -> AppError {
+    invalid(match number {
+        102 | 156 => "Invalid SQL Server syntax in the query.",
+        1033 => "SQL Server requires TOP or OFFSET with ORDER BY in this query.",
+        208 => "A table or view does not exist. Check the table name and schema.",
+        207 | 4104 => {
+            "A column does not exist or its qualifier is out of scope. Check column names and aliases."
+        }
+        209 => "A column reference is ambiguous. Qualify it with a table name or alias.",
+        8155 => "Give every computed result column an alias.",
+        8156 => "Use unique column aliases for query results.",
+        8120 => "A column must appear in GROUP BY or be used in an aggregate function.",
+        137 => "The query references an undeclared variable.",
+        195 => "A function used by the query does not exist.",
+        229 | 230 => "Permission denied for a table or column used by the query.",
+        8134 => "The query attempted to divide by zero.",
+        245 | 8114 => {
+            "A value cannot be converted to the requested type. Check casts and input values."
+        }
+        _ => "SQL Server could not validate the query or determine its result columns.",
+    })
+}
+
+fn query_error(error: tiberius::error::Error) -> AppError {
+    match error.code() {
+        Some(number) => query_error_number(number),
+        None => driver_error(error),
+    }
+}
+
 async fn connect(input: &ConnectionInput) -> AppResult<SqlClient> {
     connect_mode(input, true).await
 }
@@ -181,10 +212,10 @@ async fn page(
     let records = client
         .query(sql, &[&offset, &limit])
         .await
-        .map_err(driver_error)?
+        .map_err(query_error)?
         .into_first_result()
         .await
-        .map_err(driver_error)?;
+        .map_err(query_error)?;
     let has_more = records.len() > size as usize;
     let rows = records
         .into_iter()
@@ -451,14 +482,11 @@ impl DatabaseAdapter for SqlServerAdapter {
         let mut names = std::collections::HashSet::new();
         let mut columns = Vec::new();
         for row in &records {
-            if row
+            if let Some(number) = row
                 .try_get::<i32, _>("error_number")
                 .map_err(driver_error)?
-                .is_some()
             {
-                return Err(invalid(
-                    "Check SQL Server SELECT syntax and aliases. Use TOP or OFFSET with an inner ORDER BY.",
-                ));
+                return Err(query_error_number(number as u32));
             }
             let name = text(row, "name")?;
             if !names.insert(name.clone()) {

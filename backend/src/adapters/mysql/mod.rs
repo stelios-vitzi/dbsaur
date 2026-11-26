@@ -20,6 +20,27 @@ fn connection_error(error: sqlx::Error) -> AppError {
     }
     error.into()
 }
+
+fn query_error(error: sqlx::Error) -> AppError {
+    let number = error
+        .as_database_error()
+        .and_then(|db| db.try_downcast_ref::<sqlx::mysql::MySqlDatabaseError>())
+        .map(|db| db.number());
+    invalid(match number {
+        Some(1064 | 1149) => "Invalid SQL syntax in the query.",
+        Some(1146) => "A table or view does not exist. Check the table name and database.",
+        Some(1054) => "A column does not exist or is out of scope. Check column names and aliases.",
+        Some(1052) => "A column reference is ambiguous. Qualify it with a table name or alias.",
+        Some(1060) => "Use unique column aliases for query results.",
+        Some(1055 | 1140) => {
+            "A column must appear in GROUP BY or be used in an aggregate function."
+        }
+        Some(1305) => "A function used by the query does not exist.",
+        Some(1142 | 1143) => "Permission denied for a table or column used by the query.",
+        Some(1365) => "The query attempted to divide by zero.",
+        _ => return error.into(),
+    })
+}
 // MariaDB shares the wire protocol and metadata adapter, with its own timeout setup.
 pub(crate) async fn connect(input: &ConnectionInput) -> AppResult<MySqlConnection> {
     connect_mode(input, true).await
@@ -248,7 +269,8 @@ async fn page(
         .bind(u64::from(page_size) + 1)
         .bind(u64::from(page) * u64::from(page_size))
         .fetch_all(&mut *tx)
-        .await?;
+        .await
+        .map_err(query_error)?;
     let has_more = records.len() > page_size as usize;
     let rows = records
         .into_iter()
@@ -374,7 +396,8 @@ pub(crate) async fn query(input: &ConnectionInput, query: &SqlQuery) -> AppResul
     let describe = format!("SELECT * FROM {source} AS source");
     let statement = connection
         .prepare(sqlx::AssertSqlSafe(describe.as_str()).into_sql_str())
-        .await?;
+        .await
+        .map_err(query_error)?;
     let mut names = std::collections::HashSet::new();
     let mut columns = Vec::new();
     for column in statement.columns() {

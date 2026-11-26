@@ -289,27 +289,7 @@ fn sample_database() -> rusqlite::Result<rusqlite::Connection> {
 }
 
 fn sample_error(error: rusqlite::Error) -> AppError {
-    let message = match &error {
-        rusqlite::Error::SqliteFailure(failure, message) => {
-            if failure.code == rusqlite::ErrorCode::OperationInterrupted {
-                return AppError(
-                    ErrorKind::Timeout,
-                    "Database request timed out. Try a smaller query.",
-                );
-            }
-            message.clone().unwrap_or_default()
-        }
-        _ => String::new(),
-    };
-    invalid(if message.starts_with("no such function") {
-        "This function is not available in the sample workspace. Connect PostgreSQL for full SQL."
-    } else if message.starts_with("no such table") {
-        "Unknown sample table. Query public.customers, public.orders, or public.products."
-    } else if message.starts_with("no such column") || message.contains("ambiguous column") {
-        "Check the column names. Run one SELECT query at a time."
-    } else {
-        "Check the SQL syntax, table names, and column aliases. Run one SELECT query at a time."
-    })
+    super::sqlite::query_error(error, true)
 }
 
 fn run_sample_query(
@@ -456,11 +436,27 @@ mod tests {
             "DELETE FROM customers",
             "SELECT 1; DROP TABLE customers",
             "ATTACH DATABASE 'x.db' AS x",
-            "SELECT * FROM missing_table",
-            "SELECT nope FROM customers",
             "SELECT id, id FROM customers",
         ] {
             assert!(run(sql).await.is_err(), "{sql}");
+        }
+        for (sql, expected) in [
+            ("SELECT * FROM", "Invalid SQL syntax"),
+            ("SELECT * FROM missing_table", "Unknown sample table"),
+            (
+                "SELECT missing_column FROM customers",
+                "A column does not exist",
+            ),
+            (
+                "SELECT id FROM customers JOIN orders ON customers.id = orders.customer_id",
+                "A column reference is ambiguous",
+            ),
+        ] {
+            let Err(error) = run(sql).await else {
+                panic!("Expected query to fail: {sql}");
+            };
+            assert!(error.1.starts_with(expected), "{error:?}");
+            assert!(!error.1.contains("missing_table") && !error.1.contains("missing_column"));
         }
     }
 }

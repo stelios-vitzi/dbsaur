@@ -85,10 +85,33 @@ pub fn quote_identifier(name: &str) -> String {
 fn query_error(error: sqlx::Error) -> AppError {
     match &error {
         sqlx::Error::Database(e) => match e.code().as_deref() {
-            Some("42601" | "42P01" | "42703" | "42702" | "42P18" | "42P02") => invalid(
-                "Check the SQL syntax, table names, and column aliases. Run one SELECT query at a time.",
+            Some("42601") => invalid("Invalid PostgreSQL syntax in the query."),
+            Some("42P01") => invalid(
+                "A table does not exist or its alias is out of scope. Check the FROM clause and schema names.",
             ),
-            Some("25006" | "0A000") => invalid("Only read-only SELECT queries are supported."),
+            Some("42703") => invalid(
+                "A column does not exist or is out of scope. Check column names and aliases.",
+            ),
+            Some("42702") => {
+                invalid("A column reference is ambiguous. Qualify it with a table name or alias.")
+            }
+            Some("42P18" | "42P02") => {
+                invalid("The query contains an unresolved parameter. Supply a value in the SQL.")
+            }
+            Some("42883") => invalid(
+                "PostgreSQL could not find a matching function or operator. Check argument types.",
+            ),
+            Some("42803") => {
+                invalid("A column must appear in GROUP BY or be used in an aggregate function.")
+            }
+            Some("22012") => invalid("The query attempted to divide by zero."),
+            Some("22P02") => invalid(
+                "A value cannot be converted to the requested type. Check casts and input values.",
+            ),
+            Some("25006") => invalid("Only read-only SELECT queries are supported."),
+            Some("0A000") => {
+                invalid("The query uses a feature PostgreSQL does not support in this context.")
+            }
             _ => error.into(),
         },
         _ => error.into(),

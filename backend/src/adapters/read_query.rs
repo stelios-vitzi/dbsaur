@@ -69,8 +69,8 @@ pub fn select(sql: &str, dialect: &dyn Dialect) -> AppResult<String> {
     if sql.contains("/*!") || sql.contains("/*M!") {
         return Err(invalid("Executable SQL comments are unsupported."));
     }
-    let statements = Parser::parse_sql(dialect, sql)
-        .map_err(|_| invalid("Run one supported SELECT query with unique column aliases."))?;
+    let statements =
+        Parser::parse_sql(dialect, sql).map_err(|_| invalid("Invalid SQL syntax in the query."))?;
     if statements.len() != 1 || statements.visit(&mut ReadOnly).is_break() {
         return Err(invalid(
             "Only a single read-only SELECT query is supported.",

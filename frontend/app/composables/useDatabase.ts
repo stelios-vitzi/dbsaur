@@ -33,13 +33,20 @@ export function useDatabase() {
   const connecting = ref(false)
   const testing = ref(false)
   const connectionError = ref('')
+  const activeQuery = ref<string | null>(null)
   watch([session, switching, connecting], () => toast.cancelConfirmations(), { flush: 'sync' })
   const error = ref('')
   for (const source of [error, connectionError])
     watch(
       source,
       (failure) => {
-        if (failure) toast.show(failure, 'error')
+        const showInResults =
+          source === error &&
+          !data.value &&
+          activeQuery.value &&
+          session.value &&
+          session.value.provider !== 'mongodb'
+        if (failure && !showInResults) toast.show(failure, 'error')
       },
       { flush: 'sync' },
     )
@@ -47,7 +54,6 @@ export function useDatabase() {
   const pageSize = ref(50)
   const sort = ref<string | undefined>()
   const descending = ref(false)
-  const activeQuery = ref<string | null>(null)
   let requestVersion = 0
   let controller: AbortController | undefined
   const preferences = createConnectionPreferences()
